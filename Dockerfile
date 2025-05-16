@@ -1,6 +1,6 @@
 ### JABAWS 2.2 ###
 
-FROM tomcat:8.5
+FROM tomcat:8.5.100-jre8-temurin-jammy
 
 RUN apt-get update; apt-get -y install g++ && apt-get -y install make && \
   apt-get -y install libargtable2-dev && apt-get -y install gfortran && \
