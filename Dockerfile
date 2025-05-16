@@ -3,7 +3,8 @@
 FROM tomcat:8.5
 
 RUN apt-get update; apt-get -y install g++ && apt-get -y install make && \
-  apt-get -y install libargtable2-dev && apt-get -y install gfortran
+  apt-get -y install libargtable2-dev && apt-get -y install gfortran && \
+  apt-get -y install unzip
 
 RUN wget --no-check-certificate https://www.python.org/ftp/python/2.7.13/Python-2.7.13.tgz && \
   tar -xzf Python-2.7.13.tgz && cd Python-2.7.13 && ./configure && make && make install
