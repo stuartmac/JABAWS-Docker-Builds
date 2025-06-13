@@ -9,13 +9,13 @@ RUN apt-get update; apt-get -y install g++ && apt-get -y install make && \
 RUN wget --no-check-certificate https://www.python.org/ftp/python/2.7.13/Python-2.7.13.tgz && \
   tar -xzf Python-2.7.13.tgz && cd Python-2.7.13 && ./configure && make && make install
 
-ENV WAR http://www.compbio.dundee.ac.uk/jabaws22/archive/jabaws.war
+ENV WAR=http://www.compbio.dundee.ac.uk/jabaws22/archive/jabaws.war
 RUN wget $WAR -O /tmp/jabaws.war && \
     mkdir -p $CATALINA_HOME/webapps/jabaws && \
     unzip /tmp/jabaws.war -d $CATALINA_HOME/webapps/jabaws && \
     rm /tmp/jabaws.war
 
-ENV EXEC http://www.compbio.dundee.ac.uk/jabaws22/archive/docker/Executable.properties
+ENV EXEC=http://www.compbio.dundee.ac.uk/jabaws22/archive/docker/Executable.properties
 RUN wget $EXEC -O $CATALINA_HOME/webapps/jabaws/conf/Executable.properties
 
 RUN mkdir -p $CATALINA_HOME/webapps/jabaws/jobsout
