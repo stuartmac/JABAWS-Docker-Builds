@@ -2,9 +2,15 @@
 
 FROM tomcat:8.5.100-jre8-temurin-jammy
 
-RUN apt-get update; apt-get -y install g++ && apt-get -y install make && \
-  apt-get -y install libargtable2-dev && apt-get -y install gfortran && \
-  apt-get -y install unzip
+RUN apt-get update && apt-get install -y \
+    g++ \
+    make \
+    gfortran \
+    libargtable2-dev \
+    unzip \
+    libperl5.34 \
+    perl-modules-5.34 \
+    wget
 
 RUN wget --no-check-certificate https://www.python.org/ftp/python/2.7.13/Python-2.7.13.tgz && \
   tar -xzf Python-2.7.13.tgz && cd Python-2.7.13 && ./configure && make && make install
