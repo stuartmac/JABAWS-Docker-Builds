@@ -23,7 +23,7 @@ RUN mkdir -p $CATALINA_HOME/webapps/jabaws/jobsout
 WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/
 
 # compile the binaries
-#RUN chmod +x ./compilebin.sh && ./compilebin.sh
+RUN chmod +x ./compilebin.sh && ./compilebin.sh
 RUN chmod +x ./setexecflag.sh && ./setexecflag.sh
 
 WORKDIR $CATALINA_HOME
