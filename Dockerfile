@@ -41,7 +41,7 @@ WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/
 
 # RUN chmod +x ./compilebin.sh && ./compilebin.sh
 # update config scripts and compile both ClustalW & Clustal Omega
-RUN for pkg in clustalw clustalo; do \
+RUN for pkg in clustalw clustalo ViennaRNA; do \
       echo "Compiling $pkg…"; \
       cd $pkg; \
       # grab modern config scripts
@@ -85,11 +85,10 @@ RUN echo "Compiling DisEMBL…" \
   # fix shebang to env python
   && sed -i '1s|.*|#!/usr/bin/env python|' DisEMBL.py \
   && chmod +x disembl DisEMBL.py
-  
+
 RUN echo "Compiling Tisean…" && cd disembl/Tisean_3.0.1 && chmod +x ./configure && ./configure && make && cp source_c/sav_gol ../ && cd ../.. && chmod +x disembl/sav_gol
 RUN echo "Setting up GlobPlot…" && cp disembl/sav_gol globplot/sav_gol && cd globplot && chmod +x GlobPlot.py
 RUN echo "Compiling IUPred…" && cd iupred && make clean && make
-# RUN echo "Compiling ViennaRNA…" && cd ViennaRNA && chmod +x ./configure && ./configure && make clean && make
 RUN echo "Compiling GLProbs…" && cd GLProbs-1.0 && make clean && make
 RUN echo "Compiling MSAProbs…" && cd MSAProbs-0.9.7/MSAProbs && make clean && make
 
