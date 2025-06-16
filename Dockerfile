@@ -30,7 +30,20 @@ WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/
 
 # compile the binaries
 # RUN chmod +x ./compilebin.sh && ./compilebin.sh
-RUN echo "Compiling Clustalw…" && cd clustalw && chmod +x ./configure && ./configure && make clean && make && chmod +x src/clustalw2
+# update config scripts and compile ClustalW
+RUN echo "Compiling Clustalw…" \
+  && cd clustalw \
+  \
+  # grab modern config scripts
+  && wget -qO config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess' \
+  && wget -qO config.sub   'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub' \
+  && chmod +x config.* configure \
+  \
+  # explicitly set build triplet
+  && ./configure --build=$(uname -m)-linux-gnu \
+  && make clean \
+  && make \
+  && chmod +x src/clustalw2
 RUN echo "Compiling Clustal Omega…" && cd clustalo && chmod +x ./configure && ./configure && make clean && make && chmod +x src/clustalo
 RUN echo "Compiling Mafft…" && cd mafft/core && make clean && make
 RUN echo "Compiling fasta34…" && cd fasta34 && rm -f *.o && make && chmod +x fasta34
