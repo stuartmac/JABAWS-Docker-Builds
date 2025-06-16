@@ -44,7 +44,22 @@ RUN echo "Compiling Clustalw…" \
   && make clean \
   && make \
   && chmod +x src/clustalw2
-RUN echo "Compiling Clustal Omega…" && cd clustalo && chmod +x ./configure && ./configure && make clean && make && chmod +x src/clustalo
+
+# update config scripts and compile Clustal Omega
+RUN echo "Compiling Clustal Omega…" \
+  && cd clustalo \
+  \
+  # grab modern config scripts
+  && wget -qO config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess' \
+  && wget -qO config.sub   'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub' \
+  && chmod +x config.* configure \
+  \
+  # explicitly set build triplet
+  && ./configure --build=$(uname -m)-linux-gnu \
+  && make clean \
+  && make \
+  && chmod +x src/clustalo
+
 RUN echo "Compiling Mafft…" && cd mafft/core && make clean && make
 RUN echo "Compiling fasta34…" && cd fasta34 && rm -f *.o && make && chmod +x fasta34
 RUN echo "Compiling Muscle…" && cd muscle && rm -f *.o muscle && make
