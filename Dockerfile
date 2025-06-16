@@ -5,6 +5,7 @@ FROM tomcat:8.5.100-jre8-temurin-jammy
 RUN apt-get update && apt-get install -y \
     g++ \
     make \
+    # build-essential \
     gfortran \
     libargtable2-dev \
     unzip \
@@ -29,36 +30,31 @@ RUN mkdir -p $CATALINA_HOME/webapps/jabaws/jobsout
 WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/
 
 # compile the binaries
-# RUN chmod +x ./compilebin.sh && ./compilebin.sh
-# update config scripts and compile ClustalW
-RUN echo "Compiling Clustalw…" \
-  && cd clustalw \
-  \
-  # grab modern config scripts
-  && wget -qO config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess' \
-  && wget -qO config.sub   'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub' \
-  && chmod +x config.* configure \
-  \
-  # explicitly set build triplet
-  && ./configure --build=$(uname -m)-linux-gnu \
-  && make clean \
-  && make \
-  && chmod +x src/clustalw2
+# RUN find . -name '*.o' -delete \
+#     && find . -type f \( -name '*.deps' -o -name '*.d' -o -name '*.depend' \) -delete
+# RUN sed -i -E \
+#   "s|(S->seq_comment\[a\])[[:space:]]*=[[:space:]]*'\\\\0';|\1[0] = '\\\\0';|" \
+#   tcoffee/t_coffee_source/util_lib/aln_convertion_util.c \
+#  && sed -i -E \
+#   "s|(val_array\[a\])[[:space:]]*=[[:space:]]*'\\\\0';|\1[0] = '\\\\0';|" \
+#   tcoffee/t_coffee_source/util_lib/util.c
 
-# update config scripts and compile Clustal Omega
-RUN echo "Compiling Clustal Omega…" \
-  && cd clustalo \
-  \
-  # grab modern config scripts
-  && wget -qO config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess' \
-  && wget -qO config.sub   'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub' \
-  && chmod +x config.* configure \
-  \
-  # explicitly set build triplet
-  && ./configure --build=$(uname -m)-linux-gnu \
-  && make clean \
-  && make \
-  && chmod +x src/clustalo
+# RUN chmod +x ./compilebin.sh && ./compilebin.sh
+# update config scripts and compile both ClustalW & Clustal Omega
+RUN for pkg in clustalw clustalo; do \
+      echo "Compiling $pkg…"; \
+      cd $pkg; \
+      # grab modern config scripts
+      wget -qO config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess'; \
+      wget -qO config.sub   'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub'; \
+      chmod +x config.* configure; \
+      # explicitly set build triplet
+      ./configure --build=$(uname -m)-linux-gnu; \
+      make clean && make; \
+      # glob to capture clustalw2 and clustalo
+      chmod +x src/*; \
+      cd ..; \
+    done
 
 RUN echo "Compiling Mafft…" && cd mafft/core && make clean && make
 RUN echo "Compiling fasta34…" && cd fasta34 && rm -f *.o && make && chmod +x fasta34
