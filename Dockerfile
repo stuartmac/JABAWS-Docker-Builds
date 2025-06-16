@@ -76,15 +76,15 @@ RUN echo "Compiling Muscle…" \
   && g++ -O3 *.o -o muscle -lm \
   && chmod +x muscle
 
-# RUN echo "Compiling Probcons…" && cd probcons && make clean && make && chmod +x probcons
+RUN echo "Compiling Probcons…" && cd probcons && make clean && make && chmod +x probcons
 # RUN echo "Compiling T-Coffee…" && cd tcoffee && chmod +x install && ./install clean && ./install t_coffee -force && printf '%s\n' '#!/usr/bin/env bash' 'PDIR=\"$( cd \"$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd )\"' 'export PATH=$PATH:$PDIR' 't_coffee \"$@\"' > t_coffee_source/t_coffee.sh && chmod +x t_coffee_source/t_coffee*
 # RUN echo "Compiling DisEMBL…" && cd disembl && gcc -O3 disembl.c -o disembl && chmod +x disembl DisEMBL.py
-# RUN echo "Compiling Tisean…" && cd disembl/Tisean_3.0.1 && chmod +x ./configure && ./configure && make && cp source_c/sav_gol ../ && cd ../.. && chmod +x disembl/sav_gol
-# RUN echo "Setting up GlobPlot…" && cp disembl/sav_gol globplot/sav_gol && cd globplot && chmod +x GlobPlot.py
-# RUN echo "Compiling IUPred…" && cd iupred && make clean && make
+RUN echo "Compiling Tisean…" && cd disembl/Tisean_3.0.1 && chmod +x ./configure && ./configure && make && cp source_c/sav_gol ../ && cd ../.. && chmod +x disembl/sav_gol
+RUN echo "Setting up GlobPlot…" && cp disembl/sav_gol globplot/sav_gol && cd globplot && chmod +x GlobPlot.py
+RUN echo "Compiling IUPred…" && cd iupred && make clean && make
 # RUN echo "Compiling ViennaRNA…" && cd ViennaRNA && chmod +x ./configure && ./configure && make clean && make
-# RUN echo "Compiling GLProbs…" && cd GLProbs-1.0 && make clean && make
-# RUN echo "Compiling MSAProbs…" && cd MSAProbs-0.9.7/MSAProbs && make clean && make
+RUN echo "Compiling GLProbs…" && cd GLProbs-1.0 && make clean && make
+RUN echo "Compiling MSAProbs…" && cd MSAProbs-0.9.7/MSAProbs && make clean && make
 
 # RUN chmod +x ./setexecflag.sh && ./setexecflag.sh
 
