@@ -56,7 +56,11 @@ RUN for pkg in clustalw clustalo; do \
       cd ..; \
     done
 
-RUN echo "Compiling Mafft…" && cd mafft/core && make clean && make
+RUN echo "Compiling Mafft…" \
+  && cd mafft/core \
+  && make clean \
+  && make CFLAGS="-Denablemultithread -O3 -std=c99 -fcommon"
+
 RUN echo "Compiling fasta34…" && cd fasta34 && rm -f *.o && make && chmod +x fasta34
 RUN echo "Compiling Muscle…" && cd muscle && rm -f *.o muscle && make
 RUN echo "Compiling Probcons…" && cd probcons && make clean && make && chmod +x probcons
