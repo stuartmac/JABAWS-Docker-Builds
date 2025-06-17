@@ -22,8 +22,7 @@ RUN wget $WAR -O /tmp/jabaws.war && \
     unzip /tmp/jabaws.war -d $CATALINA_HOME/webapps/jabaws && \
     rm /tmp/jabaws.war
 
-ENV EXEC=http://www.compbio.dundee.ac.uk/jabaws22/archive/docker/Executable.properties
-RUN wget $EXEC -O $CATALINA_HOME/webapps/jabaws/conf/Executable.properties
+COPY Executable.properties $CATALINA_HOME/webapps/jabaws/conf/Executable.properties
 
 RUN mkdir -p $CATALINA_HOME/webapps/jabaws/jobsout
 
