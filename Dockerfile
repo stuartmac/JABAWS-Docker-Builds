@@ -29,15 +29,6 @@ RUN mkdir -p $CATALINA_HOME/webapps/jabaws/jobsout
 WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/
 
 # compile the binaries
-# RUN find . -name '*.o' -delete \
-#     && find . -type f \( -name '*.deps' -o -name '*.d' -o -name '*.depend' \) -delete
-# RUN sed -i -E \
-#   "s|(S->seq_comment\[a\])[[:space:]]*=[[:space:]]*'\\\\0';|\1[0] = '\\\\0';|" \
-#   tcoffee/t_coffee_source/util_lib/aln_convertion_util.c \
-#  && sed -i -E \
-#   "s|(val_array\[a\])[[:space:]]*=[[:space:]]*'\\\\0';|\1[0] = '\\\\0';|" \
-#   tcoffee/t_coffee_source/util_lib/util.c
-
 # RUN chmod +x ./compilebin.sh && ./compilebin.sh
 # update config scripts and compile both ClustalW & Clustal Omega
 RUN for pkg in clustalw clustalo ViennaRNA; do \
@@ -76,7 +67,20 @@ RUN echo "Compiling Muscle…" \
   && chmod +x muscle
 
 RUN echo "Compiling Probcons…" && cd probcons && make clean && make && chmod +x probcons
-# RUN echo "Compiling T-Coffee…" && cd tcoffee && chmod +x install && ./install clean && ./install t_coffee -force && printf '%s\n' '#!/usr/bin/env bash' 'PDIR=\"$( cd \"$( dirname \"${BASH_SOURCE[0]}\" )\" && pwd )\"' 'export PATH=$PATH:$PDIR' 't_coffee \"$@\"' > t_coffee_source/t_coffee.sh && chmod +x t_coffee_source/t_coffee*
+
+
+RUN echo "Compiling T-Coffee…" && cd tcoffee \
+  && find . -type f \( -name '*.o' -o -name '*.deps' -o -name '*.d' -o -name '*.depend' \) -delete \
+  && chmod +x install \
+  && ./install clean \
+  && sed -i -E "s|CFLAGS=-O3 -Wno-write-strings|CFLAGS=-g -O0 -fno-strict-aliasing -Wall -Wno-write-strings -std=c++98|" \
+    t_coffee_source/makefile \
+  && ./install t_coffee -force \
+  && printf '%s\n' '#!/usr/bin/env bash' \
+    'PDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"' \
+    'export PATH="$PATH:$PDIR"' \
+    't_coffee "$@"' > t_coffee_source/t_coffee.sh \
+  && chmod +x t_coffee_source/t_coffee*
 
 RUN echo "Compiling DisEMBL…" \
   && cd disembl \
