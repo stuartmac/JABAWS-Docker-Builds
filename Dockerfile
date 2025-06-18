@@ -103,7 +103,7 @@ RUN echo "Compiling MSAProbs…" && make clean && make
 
 # RUN chmod +x ./setexecflag.sh && ./setexecflag.sh
 
-WORKDIR $CATALINA_HOME
+WORKDIR /usr/local/tomcat
 
 EXPOSE 8080
 CMD ["catalina.sh", "run"]
