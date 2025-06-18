@@ -51,13 +51,10 @@ RUN echo "Compiling Mafft…" \
 
 RUN echo "Compiling fasta34…" && cd fasta34 && rm -f *.o && make && chmod +x fasta34
 
+COPY tool-config/muscle-mk ./muscle/mk
 RUN echo "Compiling Muscle…" \
   && cd muscle \
   && chmod +x mk \
-  # remove interactive‐TTY & unsupported SSE flags  
-  && sed -i 's|/dev/tty|/dev/null|g' mk \
-  # remove unsupported SSE flags, if we need similar optimizations on a non-x86 platform we could swap them for a generic tuning flag (e.g. -march=native)
-  && sed -i -E 's/-msse2//g; s/-mfpmath=sse//g' mk \
   # run headless build  
   && yes '' | ./mk \
   # use g++ (links libstdc++ & libm) instead of gcc
