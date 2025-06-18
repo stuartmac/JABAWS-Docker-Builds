@@ -65,7 +65,7 @@ RUN echo "Compiling Probcons…" && cd probcons && make clean && make && chmod +
 
 
 RUN echo "Compiling T-Coffee…" && cd tcoffee \
-  && find . -type f \( -name '*.o' -o -name '*.deps' -o -name '*.d' -o -name '*.depend' \) -delete \
+  && find . -type f \( -name '*.o' -o -name '*.deps' \) -delete \
   && chmod +x install \
   && ./install clean \
   && sed -i -E "s|CFLAGS=-O3 -Wno-write-strings|CFLAGS=-g -O0 -fno-strict-aliasing -Wall -Wno-write-strings -std=c++98|" \
