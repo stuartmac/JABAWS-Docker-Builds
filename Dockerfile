@@ -13,12 +13,11 @@ RUN apt-get update && apt-get install -y \
     perl-modules-5.34 \
     wget
 
-RUN wget --no-check-certificate https://www.python.org/ftp/python/2.7.13/Python-2.7.13.tgz && \
-  tar -xzf Python-2.7.13.tgz && cd Python-2.7.13 && ./configure && make && make install
+COPY dependencies/Python-2.7.13.tgz /tmp/Python-2.7.13.tgz
+RUN tar -xzf /tmp/Python-2.7.13.tgz && cd Python-2.7.13 && ./configure && make && make install
 
-ENV WAR=http://www.compbio.dundee.ac.uk/jabaws22/archive/jabaws.war
-RUN wget $WAR -O /tmp/jabaws.war && \
-    mkdir -p $CATALINA_HOME/webapps/jabaws && \
+COPY dependencies/jabaws.war /tmp/jabaws.war
+RUN mkdir -p $CATALINA_HOME/webapps/jabaws && \
     unzip /tmp/jabaws.war -d $CATALINA_HOME/webapps/jabaws && \
     rm /tmp/jabaws.war
 
@@ -31,12 +30,11 @@ WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/
 # compile the binaries
 # RUN chmod +x ./compilebin.sh && ./compilebin.sh
 # update config scripts and compile both ClustalW & Clustal Omega
+COPY dependencies/config.* ./
 RUN for pkg in clustalw clustalo ViennaRNA; do \
       echo "Compiling $pkg…"; \
       cd $pkg; \
-      # grab modern config scripts
-      wget -qO config.guess 'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess'; \
-      wget -qO config.sub   'https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub'; \
+      cp ../config.guess ../config.sub ./; \
       chmod +x config.* configure; \
       # explicitly set build triplet
       ./configure --build=$(uname -m)-linux-gnu; \
