@@ -44,16 +44,17 @@ RUN for pkg in clustalw clustalo ViennaRNA; do \
       cd ..; \
     done
 
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/mafft/core/
 RUN echo "Compiling Mafft…" \
-  && cd mafft/core \
   && make clean \
   && make CFLAGS="-Denablemultithread -O3 -std=c99 -fcommon"
 
-RUN echo "Compiling fasta34…" && cd fasta34 && rm -f *.o && make && chmod +x fasta34
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/fasta34
+RUN echo "Compiling fasta34…" && rm -f *.o && make && chmod +x fasta34
 
-COPY tool-config/muscle-mk ./muscle/mk
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/muscle
+COPY tool-config/muscle-mk ./mk
 RUN echo "Compiling Muscle…" \
-  && cd muscle \
   && chmod +x mk \
   # run headless build  
   && yes '' | ./mk \
@@ -61,10 +62,11 @@ RUN echo "Compiling Muscle…" \
   && g++ -O3 *.o -o muscle -lm \
   && chmod +x muscle
 
-RUN echo "Compiling Probcons…" && cd probcons && make clean && make && chmod +x probcons
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/probcons
+RUN echo "Compiling Probcons…" && make clean && make && chmod +x probcons
 
-
-RUN echo "Compiling T-Coffee…" && cd tcoffee \
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/tcoffee
+RUN echo "Compiling T-Coffee…" \
   && find . -type f \( -name '*.o' -o -name '*.deps' \) -delete \
   && chmod +x install \
   && ./install clean \
@@ -77,18 +79,27 @@ RUN echo "Compiling T-Coffee…" && cd tcoffee \
     't_coffee "$@"' > t_coffee_source/t_coffee.sh \
   && chmod +x t_coffee_source/t_coffee*
 
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/disembl
 RUN echo "Compiling DisEMBL…" \
-  && cd disembl \
   && gcc -O3 disembl.c -o disembl \
   # fix shebang to env python
   && sed -i '1s|.*|#!/usr/bin/env python|' DisEMBL.py \
   && chmod +x disembl DisEMBL.py
 
-RUN echo "Compiling Tisean…" && cd disembl/Tisean_3.0.1 && chmod +x ./configure && ./configure && make && cp source_c/sav_gol ../ && cd ../.. && chmod +x disembl/sav_gol
-RUN echo "Setting up GlobPlot…" && cp disembl/sav_gol globplot/sav_gol && cd globplot && chmod +x GlobPlot.py
-RUN echo "Compiling IUPred…" && cd iupred && make clean && make
-RUN echo "Compiling GLProbs…" && cd GLProbs-1.0 && make clean && make
-RUN echo "Compiling MSAProbs…" && cd MSAProbs-0.9.7/MSAProbs && make clean && make
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/disembl/Tisean_3.0.1
+RUN echo "Compiling Tisean…" && chmod +x ./configure && ./configure && make && cp source_c/sav_gol ../ && cd ../.. && chmod +x disembl/sav_gol
+
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/globplot
+RUN echo "Setting up GlobPlot…" && cp ../disembl/sav_gol ./sav_gol && chmod +x GlobPlot.py
+
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/iupred
+RUN echo "Compiling IUPred…" && make clean && make
+
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/GLProbs-1.0
+RUN echo "Compiling GLProbs…" && make clean && make
+
+WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/MSAProbs-0.9.7/MSAProbs
+RUN echo "Compiling MSAProbs…" && make clean && make
 
 # RUN chmod +x ./setexecflag.sh && ./setexecflag.sh
 
