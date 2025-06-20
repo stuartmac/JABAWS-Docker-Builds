@@ -73,11 +73,8 @@ RUN echo "Compiling T-Coffee…" \
   && sed -i -E "s|CFLAGS=-O3 -Wno-write-strings|CFLAGS=-g -O0 -fno-strict-aliasing -Wall -Wno-write-strings -std=c++98|" \
     t_coffee_source/makefile \
   && ./install t_coffee -force \
-  && printf '%s\n' '#!/usr/bin/env bash' \
-    'PDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"' \
-    'export PATH="$PATH:$PDIR"' \
-    't_coffee "$@"' > t_coffee_source/t_coffee.sh \
   && chmod +x t_coffee_source/t_coffee*
+COPY jabaws-config/t_coffee.sh t_coffee_source/
 
 WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/disembl
 RUN echo "Compiling DisEMBL…" \
