@@ -105,5 +105,13 @@ RUN echo "Compiling MSAProbs…" && make clean && make
 
 WORKDIR /usr/local/tomcat
 
+# Clean up build resources
+RUN apt-get purge -y --auto-remove \
+    g++ \
+    make \
+    unzip \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 8080
 CMD ["catalina.sh", "run"]
