@@ -66,12 +66,11 @@ WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/probcons
 RUN echo "Compiling Probcons…" && make clean && make && chmod +x probcons
 
 WORKDIR $CATALINA_HOME/webapps/jabaws/binaries/src/tcoffee
+COPY tool-config/tcoffee-makefile t_coffee_source/makefile
 RUN echo "Compiling T-Coffee…" \
   && find . -type f \( -name '*.o' -o -name '*.deps' \) -delete \
   && chmod +x install \
   && ./install clean \
-  && sed -i -E "s|CFLAGS=-O3 -Wno-write-strings|CFLAGS=-g -O0 -fno-strict-aliasing -Wall -Wno-write-strings -std=c++98|" \
-    t_coffee_source/makefile \
   && ./install t_coffee -force \
   && chmod +x t_coffee_source/t_coffee*
 COPY jabaws-config/t_coffee.sh t_coffee_source/
