@@ -24,6 +24,13 @@ if [ ! -f "$WAR_FILE" ]; then
   wget "$WAR_URL" -O "$WAR_FILE"
 fi
 
+# Explode the WAR file
+if [ ! -d "$DEPENDENCIES_DIR/jabaws" ]; then
+  echo "Exploding JABAWS WAR file..."
+  mkdir -p "$DEPENDENCIES_DIR/jabaws"
+  unzip -q "$WAR_FILE" -d "$DEPENDENCIES_DIR/jabaws"
+fi
+
 # Download config scripts
 CONFIG_GUESS_URL="https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess"
 CONFIG_SUB_URL="https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub"
