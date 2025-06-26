@@ -112,6 +112,14 @@ COPY Executable.properties conf/Executable.properties
 # 3) Inject freshly‑built binaries into the WAR root so they unpack to /binaries/*
 COPY --from=tool-builder /build ./binaries/src
 
+# 3a) Microoptimise final image size by removing source files
+RUN find binaries/src -type f \( \
+      -name '*.c'   -o -name '*.cpp' -o -name '*.cc' \
+      -o -name '*.h' -o -name '*.hpp' \
+      -o -name '*.f' -o -name '*.f90' -o -name '*.for' \
+      -o -name '*.inc' \) -delete \
+      && find binaries/src -type f -name '*.o' -delete
+
 # 4) Re‑assemble the patched WAR (there's no META-INF/MANIFEST.MF in the original WAR,
 #    so we don't need to re‑sign it)
 RUN jar cf /tmp/jabaws-patched.war -C . .
@@ -132,10 +140,10 @@ RUN apt-get update \
 
 # ── Choose ONE of the two COPY lines below ─────────────────────────
 # a) Fastest runtime startup (exploded directory, larger image):
-COPY --from=war-patcher /work /usr/local/tomcat/webapps/jabaws
+# COPY --from=war-patcher /work /usr/local/tomcat/webapps/jabaws
 
 # b) Smaller image (Tomcat explodes WAR on first boot):
-# COPY --from=war-patcher /tmp/jabaws-patched.war /usr/local/tomcat/webapps/jabaws.war
+COPY --from=war-patcher /tmp/jabaws-patched.war /usr/local/tomcat/webapps/jabaws.war
 
 # Prevent double scanning if both WAR and exploded dir ever co‑exist
 ENV CATALINA_OPTS="-Dtomcat.util.scan.StandardJarScanFilter.jarsToSkip=jabaws.war"
