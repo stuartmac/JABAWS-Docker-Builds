@@ -1,5 +1,8 @@
 # JABAWS Docker Build
 
+> TL;DR: Run `./quick-build.sh` to build locally, or  
+> `./multi-platform-build.sh --tag youruser/jabaws:latest` to build and push a cross-platform image.
+
 A comprehensive, multi-architecture Docker build system for JABAWS (Java Bioinformatics Analysis Web Services).
 
 ---
@@ -15,6 +18,7 @@ A comprehensive, multi-architecture Docker build system for JABAWS (Java Bioinfo
 ```bash
 ./build.sh --tag jabaws:latest                              # Full control
 ./dev-build.sh --fast --run                                 # Dev workflow
+./multi-platform-build.sh --tag myregistry/jabaws:latest    # Multi-platform
 ```
 
 ---
@@ -36,16 +40,31 @@ Full-featured build with options:
   -v, --verbose           Verbose output
       --skip-deps         Skip dependency steps
       --push              Push image after build
+      --multi-platform    Build for both AMD64 and ARM64
 ```
 
 ### `dev-build.sh`
 Fast iteration and dev support:
+
 ```bash
 ./dev-build.sh [OPTIONS]
   -f, --fast     Use cache, skip checks
   -r, --run      Run after build
   -s, --stop     Stop running container
       --logs     Show container logs
+```
+
+### `multi-platform-build.sh`
+Cross-architecture builds for registries:
+
+```bash
+./multi-platform-build.sh [OPTIONS]
+  -t, --tag TAG          Image tag (required for registry)
+  -c, --clean            Clean build
+  -n, --no-cache         No cache
+  -v, --verbose          Verbose output
+      --registry REG     Registry prefix
+      --check-only       Check prerequisites only
 ```
 
 ---
@@ -58,7 +77,48 @@ Fast iteration and dev support:
 ./build.sh --platform linux/arm64              # ARM64 build
 ./dev-build.sh --fast --run                    # Dev: build & run
 ./dev-build.sh --logs                          # Show logs
+
+# Multi-platform builds (requires registry push)
+./multi-platform-build.sh --tag myuser/jabaws:latest
+./build.sh --multi-platform --push --tag myuser/jabaws:v2.2
 ```
+
+---
+
+## 🌐 Multi-Platform Builds
+
+Build Docker images that work on both Intel/AMD and Apple Silicon architectures:
+
+### Prerequisites for Multi-Platform Builds:
+- Docker with Buildx support (included in Docker Desktop)
+- Access to a Docker registry (Docker Hub, GitHub Container Registry, etc.)
+- Registry authentication (`docker login`)
+
+### Quick Multi-Platform Build:
+```bash
+# Check prerequisites
+./multi-platform-build.sh --check-only
+
+# Build and push to Docker Hub
+docker login
+./multi-platform-build.sh --tag yourusername/jabaws:latest
+
+# Build and push to GitHub Container Registry  
+docker login ghcr.io
+./multi-platform-build.sh --tag ghcr.io/yourusername/jabaws:latest
+```
+
+### Using the Main Build Script:
+```bash
+# Multi-platform build (requires --push)
+./build.sh --multi-platform --push --tag yourusername/jabaws:latest
+```
+
+### Benefits:
+- **Universal compatibility**: Single image tag works on both architectures
+- **Automatic selection**: Docker automatically pulls the correct architecture
+- **Performance optimized**: Native compilation for each platform
+- **Simple deployment**: Same `docker run` command works everywhere
 
 ---
 
@@ -68,6 +128,7 @@ Fast iteration and dev support:
 |----------------|--------------------|------------------------------------|
 | Apple Silicon  | `linux/arm64`      | Native ARM64 for optimal performance |
 | Intel/AMD      | `linux/amd64`      | Native                            |
+| Multi-Platform | `amd64` + `arm64`  | Universal image (requires registry) |
 | Override       | Any supported arch | Use `--platform` option            |
 
 > Performance: Native ARM64 builds on Apple Silicon provide significantly better performance than emulated AMD64.

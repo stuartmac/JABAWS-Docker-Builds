@@ -39,6 +39,7 @@ DEPS_ONLY=false
 VERBOSE=false
 SKIP_DEPS=false
 PUSH_IMAGE=false
+MULTI_PLATFORM=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colors for output
@@ -92,6 +93,8 @@ Options:
   -v, --verbose           Enable verbose output
   --skip-deps             Skip dependency preparation (assume already done)
   --push                  Push image to registry after build
+  --multi-platform        Build for both linux/amd64 and linux/arm64
+                          (requires --push, creates manifest for both platforms)
 
 Examples:
   ./build.sh                                    # Auto-detect platform
@@ -99,11 +102,13 @@ Examples:
   ./build.sh --platform linux/arm64           # Build for ARM64
   ./build.sh --tag jabaws:v2.2 --no-cache     # Custom tag, no cache
   ./build.sh --clean --verbose                 # Clean build with verbose output
+  ./build.sh --multi-platform --push          # Multi-platform build and push
 
 Platform Detection:
   - On Apple Silicon Macs: defaults to linux/arm64 (native performance)
   - On Intel/AMD systems: defaults to linux/amd64
   - Use --platform to override auto-detection
+  - Use --multi-platform to build for both architectures
 
 EOF
 }
@@ -144,6 +149,31 @@ check_docker() {
     fi
     
     print_status "Docker is available and running"
+}
+
+# Function to check buildx support
+check_buildx_support() {
+    if ! docker buildx version &> /dev/null; then
+        print_error "Docker Buildx is not available"
+        print_error "Multi-platform builds require Docker Buildx"
+        exit 1
+    fi
+    
+    # Check if builder supports required platforms
+    local available_platforms
+    available_platforms=$(docker buildx inspect --bootstrap 2>/dev/null | grep "Platforms:" | cut -d: -f2 | tr ',' '\n' | tr -d ' ')
+    
+    if ! echo "$available_platforms" | grep -q "linux/amd64"; then
+        print_error "Builder does not support linux/amd64 platform"
+        exit 1
+    fi
+    
+    if ! echo "$available_platforms" | grep -q "linux/arm64"; then
+        print_error "Builder does not support linux/arm64 platform"
+        exit 1
+    fi
+    
+    print_status "Docker Buildx supports multi-platform builds"
 }
 
 # Function to prepare dependencies
@@ -198,6 +228,17 @@ verify_dependencies() {
 build_docker_image() {
     print_header "Building Docker Image"
     
+    # Check for multi-platform build requirements
+    if [[ "$MULTI_PLATFORM" == true ]]; then
+        if [[ "$PUSH_IMAGE" != true ]]; then
+            print_error "Multi-platform builds require --push option"
+            print_error "This is a Docker limitation for multi-arch manifests"
+            exit 1
+        fi
+        check_buildx_support
+        return build_multiplatform_image
+    fi
+    
     local build_args=()
     local docker_args=()
     
@@ -232,8 +273,49 @@ build_docker_image() {
     fi
 }
 
+# Function to build multi-platform image
+build_multiplatform_image() {
+    print_header "Building Multi-Platform Docker Image"
+    print_status "Building for platforms: linux/amd64, linux/arm64"
+    print_status "Image tag: $IMAGE_TAG"
+    
+    local buildx_args=()
+    
+    # Add platforms
+    buildx_args+=("--platform" "linux/amd64,linux/arm64")
+    
+    # Add no-cache argument
+    if [[ "$NO_CACHE" == true ]]; then
+        buildx_args+=("--no-cache")
+        print_status "Building without cache"
+    fi
+    
+    # Add progress output
+    if [[ "$VERBOSE" == true ]]; then
+        buildx_args+=("--progress" "plain")
+    fi
+    
+    # Multi-platform builds must be pushed
+    buildx_args+=("--push")
+    
+    cd "$SCRIPT_DIR"
+    
+    if docker buildx build "${buildx_args[@]}" -t "$IMAGE_TAG" .; then
+        print_success "Multi-platform Docker image built and pushed successfully: $IMAGE_TAG"
+        print_status "Available for both linux/amd64 and linux/arm64 platforms"
+    else
+        print_error "Multi-platform Docker build failed"
+        exit 1
+    fi
+}
+
 # Function to push image
 push_image() {
+    # Skip if multi-platform (already pushed)
+    if [[ "$MULTI_PLATFORM" == true ]]; then
+        return 0
+    fi
+    
     if [[ "$PUSH_IMAGE" == true ]]; then
         print_header "Pushing Docker Image"
         print_status "Pushing $IMAGE_TAG to registry..."
@@ -251,20 +333,31 @@ push_image() {
 show_summary() {
     print_header "Build Summary"
     echo "  Image Tag:      $IMAGE_TAG"
-    echo "  Platform:       $PLATFORM"
+    if [[ "$MULTI_PLATFORM" == true ]]; then
+        echo "  Platforms:      linux/amd64, linux/arm64 (multi-platform)"
+    else
+        echo "  Platform:       $PLATFORM"
+    fi
     echo "  Clean Build:    $CLEAN_BUILD"
     echo "  No Cache:       $NO_CACHE"
     echo "  Dependencies:   $([ "$SKIP_DEPS" == true ] && echo "Skipped" || echo "Prepared")"
     echo
     print_success "Build completed successfully!"
     echo
-    echo "To run the container:"
-    if [[ "$PLATFORM" == "linux/amd64" ]]; then
-        echo "  docker run --platform=linux/amd64 -p 8080:8080 $IMAGE_TAG"
-    elif [[ "$PLATFORM" == "linux/arm64" ]]; then
-        echo "  docker run --platform=linux/arm64 -p 8080:8080 $IMAGE_TAG"
-    else
+    
+    if [[ "$MULTI_PLATFORM" == true ]]; then
+        echo "Multi-platform image available. To run:"
+        echo "  # On any platform (Docker will pull correct architecture)"
         echo "  docker run -p 8080:8080 $IMAGE_TAG"
+    else
+        echo "To run the container:"
+        if [[ "$PLATFORM" == "linux/amd64" ]]; then
+            echo "  docker run --platform=linux/amd64 -p 8080:8080 $IMAGE_TAG"
+        elif [[ "$PLATFORM" == "linux/arm64" ]]; then
+            echo "  docker run --platform=linux/arm64 -p 8080:8080 $IMAGE_TAG"
+        else
+            echo "  docker run -p 8080:8080 $IMAGE_TAG"
+        fi
     fi
     echo
     echo "JABAWS will be available at: http://localhost:8080/jabaws"
@@ -309,6 +402,10 @@ while [[ $# -gt 0 ]]; do
             PUSH_IMAGE=true
             shift
             ;;
+        --multi-platform)
+            MULTI_PLATFORM=true
+            shift
+            ;;
         *)
             print_error "Unknown option: $1"
             show_help
@@ -324,8 +421,20 @@ if [[ "$PLATFORM" != "auto" && "$PLATFORM" != "linux/amd64" && "$PLATFORM" != "l
     exit 1
 fi
 
+# Multi-platform validation
+if [[ "$MULTI_PLATFORM" == true ]]; then
+    if [[ "$PLATFORM" != "auto" ]]; then
+        print_warning "Ignoring --platform option when --multi-platform is specified"
+    fi
+    if [[ "$PUSH_IMAGE" != true ]]; then
+        print_error "Multi-platform builds require --push option"
+        print_error "Use: ./build.sh --multi-platform --push"
+        exit 1
+    fi
+fi
+
 # Auto-detect platform if needed
-if [[ "$PLATFORM" == "auto" ]]; then
+if [[ "$PLATFORM" == "auto" && "$MULTI_PLATFORM" != true ]]; then
     PLATFORM=$(detect_platform)
     print_status "Auto-detected platform: $PLATFORM"
 fi
