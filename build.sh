@@ -236,7 +236,8 @@ build_docker_image() {
             exit 1
         fi
         check_buildx_support
-        return build_multiplatform_image
+        build_multiplatform_image
+        return
     fi
     
     local build_args=()
