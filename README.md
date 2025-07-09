@@ -150,7 +150,7 @@ open http://localhost:8080/jabaws                         # Access
 Multi-stage Docker approach:
 1. **tool-builder** – compiles native bioinformatics tools
 2. **war-patcher** – injects binaries into the WAR file
-3. **runtime** – slim Tomcat with patched WAR
+3. **runtime** – Tomcat 9.0.107 with Java 8 (JABAWS compatibility)
 
 Ensures cross-platform builds and clean runtimes.
 
@@ -158,5 +158,5 @@ Ensures cross-platform builds and clean runtimes.
 
 ## ✅ Verified On
 - macOS (Apple Silicon) via Docker Desktop
-- Tomcat 8.5 with Java 8
+- Tomcat 9.0.107 with Java 8 (JABAWS compatibility)
 - Included tools compiled per platform
