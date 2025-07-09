@@ -3,7 +3,12 @@
 # Build up to the war-patcher stage and extract the patched WAR
 # Usage: ./extract-patched-war.sh [--platform <platform>]
 
+
 set -e
+
+# Ensure script runs from its own directory for correct Docker context
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 
 IMAGE_NAME="jabaws-war-patcher"
 CONTAINER_NAME="temp-jabaws-war"
@@ -28,7 +33,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-WAR_PATH_ON_HOST="./jabaws-patched${PLATFORM_SUFFIX}.war"
+WAR_PATH_ON_HOST="$SCRIPT_DIR/jabaws-patched${PLATFORM_SUFFIX}.war"
 
 # Build the Docker image up to the war-patcher stage
 docker build $PLATFORM_ARG --target=war-patcher -t "$IMAGE_NAME" .
