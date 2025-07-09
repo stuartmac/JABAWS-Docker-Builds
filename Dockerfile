@@ -1,12 +1,11 @@
 ################################################################################
-# JABAWS 2.2 — multi‑stage Docker build
+# JABAWS 2.2 — multi‑stage Docker build with Tomcat 9
 #
 # Stage layout
 # ─────────────
 # 1. tool-builder   – build every native binary (clustal*, mafft, etc.)
 # 2. war-patcher    – unpack WAR, drop in patched config + binaries, re‑jar
-# 3. runtime        – slim Tomcat image that serves either the WAR or its
-#                     exploded directory
+# 3. runtime        – Tomcat 9.0.107 with Java 8 (JABAWS compatibility)
 ################################################################################
 
 ############################
@@ -127,7 +126,7 @@ RUN jar cf /tmp/jabaws-patched.war -C . .
 ############################
 # Stage 3 – slim Tomcat runtime
 ############################
-FROM tomcat:8.5.100-jre8-temurin-jammy
+FROM tomcat:9.0.107-jre8-temurin-jammy
 
 # ---- bring in the runtime libs the native tools need (and Python 2) ----
 RUN apt-get update \
