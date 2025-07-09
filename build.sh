@@ -124,8 +124,6 @@ detect_platform() {
         if [[ "$arch" == "arm64" ]]; then
             # Apple Silicon Mac - default to native ARM64 for best performance
             echo "linux/arm64"
-            print_status "Detected Apple Silicon Mac. Using native linux/arm64 for optimal performance."
-            print_status "Use --platform linux/amd64 if you need AMD64 compatibility."
         else
             echo "linux/amd64"
         fi
