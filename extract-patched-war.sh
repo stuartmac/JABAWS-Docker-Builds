@@ -33,6 +33,11 @@ WAR_PATH_ON_HOST="./jabaws-patched${PLATFORM_SUFFIX}.war"
 # Build the Docker image up to the war-patcher stage
 docker build $PLATFORM_ARG --target=war-patcher -t "$IMAGE_NAME" .
 
+# Remove any existing container with the same name to avoid conflicts
+if docker ps -a --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}$"; then
+  docker rm -f "$CONTAINER_NAME"
+fi
+
 # Create a temporary container from the image
 docker create --name "$CONTAINER_NAME" "$IMAGE_NAME"
 
