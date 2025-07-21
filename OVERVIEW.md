@@ -22,7 +22,7 @@ To quickly try JABAWS without saving any data or configuration, use the followin
 docker run --rm -p 8080:8080 drsasp/jabaws:latest
 ```
 
-This will start the JABAWS web server and expose it at `http://localhost:8080`. The container and any changes made within it will be discarded once it stops.
+This will start the JABAWS web server and expose it at `http://localhost:8080/jabaws`. The container and any changes made within it will be discarded once it stops.
 
 ### Run a Persistent Instance
 
