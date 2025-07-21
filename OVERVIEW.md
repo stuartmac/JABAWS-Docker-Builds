@@ -8,6 +8,8 @@ The JABAWS Docker image is ideal if you need to:
 - Work with sensitive data under strict security policies
 - Operate in offline or restricted environments
 
+This resource was developed by the [Dundee Resource for Sequence Analysis and Structure Prediction](https://www.compbio.dundee.ac.uk/drsasp.html). For more information or to use the public JABAWS server, visit the [JABAWS web server](https://www.compbio.dundee.ac.uk/jabaws/).
+
 ## Contents
 
 - [🚀 Quick Start](#-quick-start)
@@ -20,8 +22,6 @@ The JABAWS Docker image is ideal if you need to:
 - [Volume Management](#volume-management)
 - [🔄 Moving to Slivka](#-moving-to-slivka)
 - [Funding](#funding)
-
-This resource was developed by the [Dundee Resource for Sequence Analysis and Structure Prediction](https://www.compbio.dundee.ac.uk/drsasp.html). For more information or to use the public JABAWS server, visit the [JABAWS web server](https://www.compbio.dundee.ac.uk/jabaws/).
 
 ## 🚀 Quick Start
 
