@@ -22,10 +22,21 @@ This will start the JABAWS web server and expose it at `http://localhost:8080`. 
 
 ### Run a Persistent Instance
 
-To keep the container running in the background and retain data or logs, use:
+To keep the container running in the background and retain data or logs, first create the necessary directories on your host:
 
 ```bash
-docker run -d --name jabaws-server -p 8080:8080 drsasp/jabaws:latest
+mkdir -p ./logs ./jobsout
+```
+
+Then start the container with volume mounts:
+
+```bash
+docker run -d \
+  -p 8080:8080 \
+  -v "$(pwd)/logs:/usr/local/tomcat/logs" \
+  -v "$(pwd)/jobsout:/usr/local/tomcat/webapps/jabaws/jobsout" \
+  --name jabaws-server \
+  drsasp/jabaws:latest
 ```
 
 You can stop it with:
@@ -38,6 +49,18 @@ And start it again with:
 
 ```bash
 docker start jabaws-server
+```
+
+This setup keeps logs and job output on your host. For example, you can check logs with:
+
+```bash
+tail -f ./logs/catalina.out
+```
+
+And list completed job outputs:
+
+```bash
+ls -la ./jobsout/
 ```
 
 This method is recommended for regular use or deployment on a server.
