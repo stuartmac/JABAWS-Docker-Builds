@@ -100,13 +100,13 @@ And start it again with:
 docker start jabaws-server
 ```
 
-This setup keeps logs and job output on your host. For example, you can check logs with:
+If you're using bind mounts (Option B), you can inspect logs directly on the host:
 
 ```bash
 tail -f ./logs/catalina.out
 ```
 
-Other logs of interest include:
+Other log files can be tailed similarly:
 
 ```bash
 # View the latest Tomcat access log
@@ -125,6 +125,8 @@ You can also inspect specific log files, such as:
 💡 Tip: If using bind mounts, you can inspect these logs directly in `./logs/`.
 
 And list completed job outputs:
+
+To list completed job outputs (bind mount setup only):
 
 ```bash
 ls -la ./jobsout/
