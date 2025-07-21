@@ -9,13 +9,38 @@ This resource was developed by the [Dundee Resource for Sequence Analysis and St
 
 Ensure Docker is installed on your system. If needed, refer to the [Docker install docs](https://docs.docker.com/get-started/get-docker/).
 
-In a terminal, run the JABAWS Docker image:
+
+### Run a Disposable Instance
+
+To quickly try JABAWS without saving any data or configuration, use the following command:
 
 ```bash
 docker run --rm -p 8080:8080 drsasp/jabaws:latest
 ```
 
-This command will download and start the JABAWS web server on your computer and expose the application via `localhost:8080`
+This will start the JABAWS web server and expose it at `http://localhost:8080`. The container and any changes made within it will be discarded once it stops.
+
+### Run a Persistent Instance
+
+To keep the container running in the background and retain data or logs, use:
+
+```bash
+docker run -d --name jabaws-server -p 8080:8080 drsasp/jabaws:latest
+```
+
+You can stop it with:
+
+```bash
+docker stop jabaws-server
+```
+
+And start it again with:
+
+```bash
+docker start jabaws-server
+```
+
+This method is recommended for regular use or deployment on a server.
 
 
 ## Access the Services
