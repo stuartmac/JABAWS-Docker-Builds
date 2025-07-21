@@ -2,15 +2,13 @@
 
 JABAWS provides a suite of bioinformatics web services for multiple sequence alignment, protein disorder prediction, and conservation analysis — packaged for convenient deployment on your local computer, server, or cluster.
 
-This resource was developed by the [Dundee Resource for Sequence Analysis and Structure Prediction](https://www.compbio.dundee.ac.uk/drsasp.html). For more information or to use the public JABAWS server, visit the [JABAWS web server](https://www.compbio.dundee.ac.uk/jabaws/).
-
 The JABAWS Docker Image is ideal for users needing to:
 
 - Run jobs that exceed our public server limits
 - Adhere to strict data policies when working with sensitive data
 - Work offline
 
----
+This resource was developed by the [Dundee Resource for Sequence Analysis and Structure Prediction](https://www.compbio.dundee.ac.uk/drsasp.html). For more information or to use the public JABAWS server, visit the [JABAWS web server](https://www.compbio.dundee.ac.uk/jabaws/).
 
 ## 🚀 Quick Start
 
