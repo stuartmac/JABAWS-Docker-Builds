@@ -26,3 +26,15 @@ jabaws-patched*.war
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# JABAWS runtime directories
+logs/
+jobsout/
+
+# Docker build artifacts (if any)
+*.tar
+*.tar.gz
+
+# OS-specific files
+.DS_Store
+Thumbs.db
