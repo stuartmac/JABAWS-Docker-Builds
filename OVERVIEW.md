@@ -45,6 +45,49 @@ docker run -d \
   drsasp/jabaws:latest
 ```
 
+### Accessing Logs and Job Outputs
+
+To view logs:
+
+```bash
+# View live logs from the container
+docker logs -f jabaws-server
+
+# Access log files directly
+docker exec jabaws-server tail -f /usr/local/tomcat/logs/catalina.out
+```
+
+To access job outputs:
+
+```bash
+# List job outputs inside the container
+docker exec jabaws-server ls -la /usr/local/tomcat/webapps/jabaws/jobsout/
+
+# Copy job outputs from container to your host
+docker cp jabaws-server:/usr/local/tomcat/webapps/jabaws/jobsout ./local-jobsout
+```
+
+### Volume Management
+
+If you're using Docker-managed volumes (recommended Option A), here are some helpful commands:
+
+```bash
+# List volumes
+docker volume ls
+```
+
+To back up volumes:
+
+```bash
+# Backup logs volume
+docker run --rm -v jabaws-logs:/source -v $(pwd):/backup alpine \
+  tar czf /backup/jabaws-logs-backup.tar.gz -C /source .
+
+# Backup job outputs volume
+docker run --rm -v jabaws-jobsout:/source -v $(pwd):/backup alpine \
+  tar czf /backup/jabaws-jobsout-backup.tar.gz -C /source .
+```
+
 You can stop it with:
 
 ```bash

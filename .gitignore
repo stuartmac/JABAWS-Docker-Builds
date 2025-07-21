@@ -30,6 +30,7 @@ Thumbs.db
 # JABAWS runtime directories
 logs/
 jobsout/
+local-jobsout/
 
 # Docker build artifacts (if any)
 *.tar
