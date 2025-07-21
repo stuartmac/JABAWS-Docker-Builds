@@ -10,6 +10,7 @@ The JABAWS Docker Image is ideal for users needing to:
 - Adhere to strict data policies when working with sensitive data
 - Work offline
 
+
 ## 🚀 Quick Start
 
 Ensure Docker is installed on your system. If needed, refer to the [Docker install docs](https://docs.docker.com/get-started/get-docker/).
