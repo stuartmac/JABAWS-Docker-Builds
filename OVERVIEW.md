@@ -106,6 +106,24 @@ This setup keeps logs and job output on your host. For example, you can check lo
 tail -f ./logs/catalina.out
 ```
 
+Other logs of interest include:
+
+```bash
+# View the latest Tomcat access log
+docker exec jabaws-server tail -f /usr/local/tomcat/logs/localhost_access_log.$(date +%F).txt
+
+# Tail all .log and .txt files in the logs directory
+docker exec -it jabaws-server bash -c 'tail -n 20 -f /usr/local/tomcat/logs/*.log /usr/local/tomcat/logs/*.txt'
+```
+
+You can also inspect specific log files, such as:
+
+- `JABAWSErrorFile.log` — reports issues within JABAWS services
+- `localhost_access_log.*.txt` — access logs for incoming requests
+- `catalina.*.log` — Tomcat core logs (rotated daily)
+
+💡 Tip: If using bind mounts, you can inspect these logs directly in `./logs/`.
+
 And list completed job outputs:
 
 ```bash
