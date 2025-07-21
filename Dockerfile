@@ -113,7 +113,7 @@ COPY --from=tool-builder /build ./binaries/src
 
 # 3a) Microoptimise final image size by removing source files
 RUN find binaries/src -type f \( \
-      -name '*.c'   -o -name '*.cpp' -o -name '*.cc' \
+      -name '*.c' -o -name '*.cpp' -o -name '*.cc' \
       -o -name '*.h' -o -name '*.hpp' \
       -o -name '*.f' -o -name '*.f90' -o -name '*.for' \
       -o -name '*.inc' \) -delete \
@@ -139,10 +139,13 @@ RUN apt-get update \
 
 # ── Choose ONE of the two COPY lines below ─────────────────────────
 # a) Fastest runtime startup (exploded directory, larger image):
-# COPY --from=war-patcher /work /usr/local/tomcat/webapps/jabaws
+COPY --from=war-patcher /work /usr/local/tomcat/webapps/jabaws
 
 # b) Smaller image (Tomcat explodes WAR on first boot):
-COPY --from=war-patcher /tmp/jabaws-patched.war /usr/local/tomcat/webapps/jabaws.war
+# COPY --from=war-patcher /tmp/jabaws-patched.war /usr/local/tomcat/webapps/jabaws.war
+
+# Ensure jobsout directory exists for volume mount
+RUN mkdir -p /usr/local/tomcat/webapps/jabaws/jobsout
 
 # Create volume mount points for logs and job outputs
 VOLUME ["/usr/local/tomcat/logs", "/usr/local/tomcat/webapps/jabaws/jobsout"]
