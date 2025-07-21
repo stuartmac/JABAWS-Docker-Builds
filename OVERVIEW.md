@@ -110,11 +110,8 @@ To enable Jalview to use your local JABAWS instance:
 ### Monitoring Logs & Retrieving Job Outputs
 
 ```bash
-# Follow Tomcat stdout/stderr (rotated catalina.out)
+# Follow Tomcat stdout/stderr (catalina.out)
 docker logs -f jabaws-server
-
-# Tail a specific file inside the container
-docker exec jabaws-server tail -f /usr/local/tomcat/logs/catalina.out
 ```
 
 Other log files can be tailed similarly:
