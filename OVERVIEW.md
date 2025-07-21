@@ -53,27 +53,38 @@ docker stop jabaws-server
 docker start jabaws-server
 ```
 
-### Accessing Logs and Job Outputs
+### Monitoring Logs & Retrieving Job Outputs
 
-To view logs:
+#### Method 1 – Docker-based commands (works with **any** setup)
 
 ```bash
-# View live logs from the container
+# Follow Tomcat stdout/stderr (rotated catalina.out)
 docker logs -f jabaws-server
 
-# Access log files directly
+# Tail a specific file inside the container
 docker exec jabaws-server tail -f /usr/local/tomcat/logs/catalina.out
 ```
 
-To access job outputs:
+Other log files can be tailed similarly:
 
 ```bash
-# List job outputs inside the container
+# View the latest Tomcat access log
+docker exec jabaws-server tail -f /usr/local/tomcat/logs/localhost_access_log.$(date +%F).txt
+
+# Tail all .log and .txt files in the logs directory
+docker exec -it jabaws-server bash -c 'tail -n 20 -f /usr/local/tomcat/logs/*.log /usr/local/tomcat/logs/*.txt'
+```
+
+# List job-output files inside the container
 docker exec jabaws-server ls -la /usr/local/tomcat/webapps/jabaws/jobsout/
 
-# Copy job outputs from container to your host
+# Copy job-output directory to your host
 docker cp jabaws-server:/usr/local/tomcat/webapps/jabaws/jobsout ./local-jobsout
 ```
+
+> Use these commands whether you launched JABAWS with *Docker-managed volumes* or *bind mounts*.
+
+---
 
 ### Volume Management
 
@@ -95,41 +106,7 @@ docker run --rm -v jabaws-logs:/source -v $(pwd):/backup alpine \
 docker run --rm -v jabaws-jobsout:/source -v $(pwd):/backup alpine \
   tar czf /backup/jabaws-jobsout-backup.tar.gz -C /source .
 ```
-
-If you're using bind mounts (Option B), you can inspect logs directly on the host:
-
-```bash
-tail -f ./logs/catalina.out
-```
-
-Other log files can be tailed similarly:
-
-```bash
-# View the latest Tomcat access log
-docker exec jabaws-server tail -f /usr/local/tomcat/logs/localhost_access_log.$(date +%F).txt
-
-# Tail all .log and .txt files in the logs directory
-docker exec -it jabaws-server bash -c 'tail -n 20 -f /usr/local/tomcat/logs/*.log /usr/local/tomcat/logs/*.txt'
-```
-
-You can also inspect specific log files, such as:
-
-- `JABAWSErrorFile.log` — reports issues within JABAWS services
-- `localhost_access_log.*.txt` — access logs for incoming requests
-- `catalina.*.log` — Tomcat core logs (rotated daily)
-
-💡 Tip: If using bind mounts, you can inspect these logs directly in `./logs/`.
-
-And list completed job outputs:
-
-To list completed job outputs (bind mount setup only):
-
-```bash
-ls -la ./jobsout/
-```
-
 This method is recommended for regular use or deployment on a server.
-
 
 ## Access the Services
 
