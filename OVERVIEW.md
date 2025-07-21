@@ -10,7 +10,7 @@ The JABAWS Docker image is ideal if you need to:
 
 ## Contents
 
-- [Quick Start](#-quick-start)
+- [🚀 Quick Start](#-quick-start)
 - [Run a Persistent Instance](#run-a-persistent-instance)
 - [Access the Services](#access-the-services)
 - [Use with Jalview 2.11](#use-with-jalview-211)
