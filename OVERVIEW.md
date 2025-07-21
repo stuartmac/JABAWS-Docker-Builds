@@ -53,9 +53,62 @@ docker stop jabaws-server
 docker start jabaws-server
 ```
 
-### Monitoring Logs & Retrieving Job Outputs
+These methods are recommended for regular use or deployment on a server.
 
-#### Method 1 – Docker-based commands (works with **any** setup)
+## Access the Services
+
+Once started, JABAWS services will be available at:
+
+**URL**: http://localhost:8080/jabaws/
+
+Open `http://localhost:8080/jabaws/ServiceStatus` in your web browser to see the service list and status. Services are accessible via [Jalview](https://www.jalview.org) or the [JABAWS CLI](https://www.compbio.dundee.ac.uk/jabaws/getting_started.jsp#client).
+
+## Use with Jalview 2.11
+
+To enable Jalview to use your local JABAWS instance:
+
+- In Jalview, open **Preferences → Web Services**, and add your server’s JABAWS URL (e.g., `http://localhost:8080/jabaws/`)
+- Run the tools via the Jalview **Web Services** menu.
+
+## Services Provided
+
+**Multiple Sequence Alignment**
+
+- Clustal Omega
+- Clustal W
+- MAFFT
+- MUSCLE
+- T-Coffee
+- ProbCons
+- MSAProbs
+- GLProbs
+
+**Disorder Prediction**
+
+- DisEMBL
+- IUPred
+- Jronn
+- GlobPlot
+
+**Conservation Analysis**
+
+- [AACon (v1.1)](https://www.compbio.dundee.ac.uk/aacon/)
+
+**RNA Structure Prediction**
+
+- RNAalifold (from the Vienna RNA package)
+
+## Use Cases
+
+The JABAWS Docker Image is ideal for users needing to:
+
+- Run jobs that exceed our public server limits
+- Adhere to strict data policies when working with sensitive data
+- Work offline
+
+---
+
+### Monitoring Logs & Retrieving Job Outputs
 
 ```bash
 # Follow Tomcat stdout/stderr (rotated catalina.out)
@@ -106,63 +159,8 @@ docker run --rm -v jabaws-logs:/source -v $(pwd):/backup alpine \
 docker run --rm -v jabaws-jobsout:/source -v $(pwd):/backup alpine \
   tar czf /backup/jabaws-jobsout-backup.tar.gz -C /source .
 ```
-This method is recommended for regular use or deployment on a server.
 
-## Access the Services
-
-Once started, JABAWS services will be available at:
-
-**URL**: http://localhost:8080/jabaws/
-
-Open `http://localhost:8080/jabaws/ServiceStatus` in your web browser to see the service list and status. Services are accessible via [Jalview](https://www.jalview.org) or the [JABAWS CLI](https://www.compbio.dundee.ac.uk/jabaws/getting_started.jsp#client).
-
-
-
-## Use with Jalview 2.11
-
-To enable Jalview to use your local JABAWS instance:
-
-- In Jalview, open **Preferences → Web Services**, and add your server’s JABAWS URL (e.g., `http://localhost:8080/jabaws/`)
-- Run the tools via the Jalview **Web Services** menu.
-
-
-## Services Provided
-
-**Multiple Sequence Alignment**
-
-- Clustal Omega
-- Clustal W
-- MAFFT
-- MUSCLE
-- T-Coffee
-- ProbCons
-- MSAProbs
-- GLProbs
-
-**Disorder Prediction**
-
-- DisEMBL
-- IUPred
-- Jronn
-- GlobPlot
-
-**Conservation Analysis**
-
-- [AACon (v1.1)](https://www.compbio.dundee.ac.uk/aacon/)
-
-**RNA Structure Prediction**
-
-- RNAalifold (from the Vienna RNA package)
-
-
-## Use Cases
-
-The JABAWS Docker Image is ideal for users needing to:
-
-- Run jobs that exceed our public server limits
-- Adhere to strict data policies when working with sensitive data
-- Work offline
-
+---
 
 ## Slivka
 
