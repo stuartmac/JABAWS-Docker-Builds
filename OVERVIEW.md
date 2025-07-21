@@ -20,9 +20,10 @@ docker run --rm -p 8080:8080 drsasp/jabaws:latest
 
 This will start the JABAWS web server and expose it at `http://localhost:8080`. The container and any changes made within it will be discarded once it stops.
 
+
 ### Run a Persistent Instance
 
-Choose one of the following approaches:
+To run JABAWS continuously and keep logs and outputs across sessions, choose one of the following approaches:
 
 **Option A: Docker-managed volumes (recommended for most users)**
 ```bash
@@ -43,6 +44,13 @@ docker run -d \
   -v "$(pwd)/jobsout:/usr/local/tomcat/webapps/jabaws/jobsout" \
   --name jabaws-server \
   drsasp/jabaws:latest
+```
+
+To stop and restart the container:
+
+```bash
+docker stop jabaws-server
+docker start jabaws-server
 ```
 
 ### Accessing Logs and Job Outputs
@@ -86,18 +94,6 @@ docker run --rm -v jabaws-logs:/source -v $(pwd):/backup alpine \
 # Backup job outputs volume
 docker run --rm -v jabaws-jobsout:/source -v $(pwd):/backup alpine \
   tar czf /backup/jabaws-jobsout-backup.tar.gz -C /source .
-```
-
-You can stop it with:
-
-```bash
-docker stop jabaws-server
-```
-
-And start it again with:
-
-```bash
-docker start jabaws-server
 ```
 
 If you're using bind mounts (Option B), you can inspect logs directly on the host:
