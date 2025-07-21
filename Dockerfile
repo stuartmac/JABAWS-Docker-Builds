@@ -144,6 +144,9 @@ RUN apt-get update \
 # b) Smaller image (Tomcat explodes WAR on first boot):
 COPY --from=war-patcher /tmp/jabaws-patched.war /usr/local/tomcat/webapps/jabaws.war
 
+# Create volume mount points for logs and job outputs
+VOLUME ["/usr/local/tomcat/logs", "/usr/local/tomcat/webapps/jabaws/jobsout"]
+
 # Prevent double scanning if both WAR and exploded dir ever co‑exist
 ENV CATALINA_OPTS="-Dtomcat.util.scan.StandardJarScanFilter.jarsToSkip=jabaws.war"
 
