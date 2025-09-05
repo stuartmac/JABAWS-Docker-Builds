@@ -111,13 +111,13 @@ COPY Executable.properties conf/Executable.properties
 # 3) Inject freshly‑built binaries into the WAR root so they unpack to /binaries/*
 COPY --from=tool-builder /build ./binaries/src
 
-# 3a) Microoptimise final image size by removing source files
-RUN find binaries/src -type f \( \
-      -name '*.c' -o -name '*.cpp' -o -name '*.cc' \
-      -o -name '*.h' -o -name '*.hpp' \
-      -o -name '*.f' -o -name '*.f90' -o -name '*.for' \
-      -o -name '*.inc' \) -delete \
-      && find binaries/src -type f -name '*.o' -delete
+# # 3a) Microoptimise final image size by removing source files
+# RUN find binaries/src -type f \( \
+#       -name '*.c' -o -name '*.cpp' -o -name '*.cc' \
+#       -o -name '*.h' -o -name '*.hpp' \
+#       -o -name '*.f' -o -name '*.f90' -o -name '*.for' \
+#       -o -name '*.inc' \) -delete \
+#       && find binaries/src -type f -name '*.o' -delete
 
 # 4) Re‑assemble the patched WAR (there's no META-INF/MANIFEST.MF in the original WAR,
 #    so we don't need to re‑sign it)
