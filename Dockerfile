@@ -124,9 +124,9 @@ RUN find binaries/src -type f \( \
 RUN jar cf /tmp/jabaws-patched.war -C . .
 
 ############################
-# Stage 3 – slim Tomcat runtime
+# Stage 3 - slim Tomcat runtime (shared base for both variants)
 ############################
-FROM tomcat:9.0.107-jre8-temurin-jammy
+FROM tomcat:9.0.107-jre8-temurin-jammy AS runtime-base
 
 # ---- bring in the runtime libs the native tools need (and Python 2) ----
 RUN apt-get update \
@@ -137,21 +137,39 @@ RUN apt-get update \
       && ln -s /usr/bin/python2 /usr/local/bin/python \
  && rm -rf /var/lib/apt/lists/*
 
-# ── Choose ONE of the two COPY lines below ─────────────────────────
-# a) Fastest runtime startup (exploded directory, larger image):
-COPY --from=war-patcher /work /usr/local/tomcat/webapps/jabaws
-
-# b) Smaller image (Tomcat explodes WAR on first boot):
-# COPY --from=war-patcher /tmp/jabaws-patched.war /usr/local/tomcat/webapps/jabaws.war
-
-# Ensure jobsout directory exists for volume mount
-RUN mkdir -p /usr/local/tomcat/webapps/jabaws/jobsout
-
-# Create volume mount points for logs and job outputs
-VOLUME ["/usr/local/tomcat/logs", "/usr/local/tomcat/webapps/jabaws/jobsout"]
-
-# Prevent double scanning if both WAR and exploded dir ever co‑exist
+# Prevent double scanning if both WAR and exploded dir ever co-exist
 ENV CATALINA_OPTS="-Dtomcat.util.scan.StandardJarScanFilter.jarsToSkip=jabaws.war"
+
+# Logs live outside the webapp, so this is safe for both variants
+VOLUME ["/usr/local/tomcat/logs"]
 
 EXPOSE 8080
 CMD ["catalina.sh", "run"]
+
+############################
+# Stage 4a - packed WAR (smaller image; build with --target packed)
+############################
+FROM runtime-base AS packed
+
+COPY --from=war-patcher /tmp/jabaws-patched.war /usr/local/tomcat/webapps/jabaws.war
+
+# NOTE: deliberately no VOLUME on webapps/jabaws/jobsout here. Tomcat only
+# explodes the WAR into webapps/jabaws/ on first boot, and mounting anything
+# under that path pre-creates the directory with an mtime newer than the WAR --
+# HostConfig then treats it as an already-deployed app and never unpacks it.
+# If you need job outputs on a volume, use the exploded variant instead.
+
+############################
+# Stage 4b - exploded directory (DEFAULT: faster startup, mountable jobsout)
+#
+# This is the last stage in the file, so a bare `docker build` selects it.
+# None of the build scripts pass --target, so keep it last unless they change.
+############################
+FROM runtime-base AS exploded
+
+COPY --from=war-patcher /work /usr/local/tomcat/webapps/jabaws
+
+# Ensure jobsout exists at build time so the volume mounts onto a populated tree
+RUN mkdir -p /usr/local/tomcat/webapps/jabaws/jobsout
+
+VOLUME ["/usr/local/tomcat/webapps/jabaws/jobsout"]
