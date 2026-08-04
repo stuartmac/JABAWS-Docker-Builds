@@ -8,14 +8,6 @@ set -e
 DEPENDENCIES_DIR="./dependencies"
 mkdir -p "$DEPENDENCIES_DIR"
 
-# Download Python
-PYTHON_URL="https://www.python.org/ftp/python/2.7.13/Python-2.7.13.tgz"
-PYTHON_FILE="$DEPENDENCIES_DIR/Python-2.7.13.tgz"
-if [ ! -f "$PYTHON_FILE" ]; then
-  echo "Downloading Python..."
-  wget --no-check-certificate "$PYTHON_URL" -O "$PYTHON_FILE"
-fi
-
 # Download JABAWS WAR file
 WAR_URL="http://www.compbio.dundee.ac.uk/jabaws22/archive/jabaws.war"
 WAR_FILE="$DEPENDENCIES_DIR/jabaws.war"
