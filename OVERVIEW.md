@@ -20,6 +20,7 @@ This resource was developed by the [Dundee Resource for Sequence Analysis and St
 - [🔍 Monitor Logs](#-monitor-logs)
 - [📁 Retrieve Job Outputs](#-retrieve-job-outputs)
 - [Volume Management](#volume-management)
+- [🔨 Building the Image](#-building-the-image)
 - [🔄 Moving to Slivka](#-moving-to-slivka)
 - [Funding](#funding)
 
@@ -172,6 +173,46 @@ docker run --rm -v jabaws-logs:/source -v $(pwd):/backup alpine \
 # Backup job outputs volume
 docker run --rm -v jabaws-jobsout:/source -v $(pwd):/backup alpine \
   tar czf /backup/jabaws-jobsout-backup.tar.gz -C /source .
+```
+
+---
+
+## 🔨 Building the Image
+
+Most users should pull the published image. If you build it yourself, note that
+the native tools (T-Coffee, MAFFT, MUSCLE, …) are compiled from source during the
+build, for whatever architecture you build on. Building on the machine you intend
+to deploy to therefore gives you natively compiled binaries, with no cross-build
+or emulation involved.
+
+```bash
+docker build -t jabaws:local .
+```
+
+The Dockerfile offers two runtime variants as build targets:
+
+| Target | Size | Notes |
+| --- | --- | --- |
+| `exploded` (default) | ~772 MB | Webapp unpacked at build time. Faster startup, and the only variant that supports mounting a volume at `jobsout`. |
+| `packed` | ~608 MB | Ships the WAR; Tomcat unpacks it on first boot. Smaller to store and pull. |
+
+```bash
+# Smaller image, no jobsout volume
+docker build --target packed -t jabaws:slim .
+```
+
+> ⚠️ **The `packed` variant cannot be used with a `jobsout` volume.** Mounting
+> anything under `/usr/local/tomcat/webapps/jabaws/` creates that directory before
+> Tomcat starts, so Tomcat treats it as an already-deployed application and never
+> unpacks the WAR — the service returns 404. Use `packed` only without the
+> `jobsout` mount shown in [Run a Persistent Instance](#run-a-persistent-instance);
+> otherwise stay on the default.
+
+To get a shell with the tool sources *and* a full compiler toolchain — useful when
+experimenting with compilation flags — build the first stage on its own:
+
+```bash
+docker build --target tool-builder -t jabaws-tools .
 ```
 
 ---
