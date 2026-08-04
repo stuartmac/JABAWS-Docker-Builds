@@ -89,6 +89,33 @@ To enable Jalview to use your local JABAWS instance:
 - In Jalview, open **Preferences → Web Services**, and add your server’s JABAWS URL (e.g., `http://localhost:8080/jabaws/`)
 - Run the tools via the Jalview **Web Services** menu.
 
+### Registry warm-up
+
+Jalview discovers services by calling `RegistryWS.getSupportedServices()`, and it
+skips any service missing from that list. The registry only populates the list
+after it has successfully self-tested — and it builds the URLs it tests from the
+request's `Host` header. Published on a non-matching port (`-p 18080:8080`), that
+becomes `http://localhost:18080/...`, which nothing serves *inside* the
+container, so every self-test fails and the list stays empty. Jalview then finds
+**zero services and reports no error**, because an empty list isn't a failure.
+
+The entrypoint (`jabaws-entrypoint.sh`) works around this by calling
+`testAllServices` once from inside the container, where the advertised and
+listening ports agree. The registry's cache is global, so clients on any mapped
+port see the full list afterwards.
+
+It runs in the background — Tomcat serves requests within seconds of start,
+and the registry fills in once the sweep finishes. Watch it with:
+
+```bash
+docker logs -f <container> 2>&1 | grep jabaws-warmup
+```
+
+The sweep genuinely runs every tool. To skip it, set `JABAWS_WARMUP=0` — but
+note that Jalview will then discover nothing until `testAllServices` is called
+by hand. Timeouts are tunable via `JABAWS_WARMUP_READY_TIMEOUT` (default 300s)
+and `JABAWS_WARMUP_TEST_TIMEOUT` (default 900s).
+
 ---
 
 ## Services Provided

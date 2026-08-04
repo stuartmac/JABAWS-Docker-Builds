@@ -129,11 +129,13 @@ RUN jar cf /tmp/jabaws-patched.war -C . .
 FROM tomcat:9.0.107-jre8-temurin-jammy AS runtime-base
 
 # ---- bring in the runtime libs the native tools need (and Python 2) ----
+# curl is used by the entrypoint to warm the service registry on boot.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libargtable2-0 \
       libgomp1 \
       python2 \
+      curl \
       && ln -s /usr/bin/python2 /usr/local/bin/python \
  && rm -rf /var/lib/apt/lists/*
 
@@ -143,7 +145,17 @@ ENV CATALINA_OPTS="-Dtomcat.util.scan.StandardJarScanFilter.jarsToSkip=jabaws.wa
 # Logs live outside the webapp, so this is safe for both variants
 VOLUME ["/usr/local/tomcat/logs"]
 
+# RegistryWS derives the URLs it self-tests from the request's Host header, so
+# behind `-p <other>:8080` it tries to reach itself on a port that does not
+# exist inside the container, every test fails, and getSupportedServices()
+# returns an empty set -- which makes Jalview discover zero services with no
+# error. The entrypoint calls testAllServices once from inside, where the ports
+# agree, which populates the registry's global cache. See jabaws-entrypoint.sh.
+COPY jabaws-entrypoint.sh /usr/local/bin/jabaws-entrypoint.sh
+RUN chmod +x /usr/local/bin/jabaws-entrypoint.sh
+
 EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/jabaws-entrypoint.sh"]
 CMD ["catalina.sh", "run"]
 
 ############################
