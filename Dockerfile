@@ -109,6 +109,10 @@ RUN jar xf /tmp/jabaws.war
 
 # 2) Overwrite configuration as required
 COPY Executable.properties conf/Executable.properties
+# Upstream logs engine.log and JABAWSErrorFile.log through plain FileAppenders,
+# which never roll; this copy makes them RollingFileAppenders so a long-lived
+# container cannot fill the logs volume. See log4j.properties for the details.
+COPY log4j.properties WEB-INF/classes/log4j.properties
 
 # 3) Inject freshly‑built binaries into the WAR root so they unpack to /binaries/*
 COPY --from=tool-builder /build ./binaries/src
@@ -141,27 +145,38 @@ RUN apt-get update \
       && ln -s /usr/bin/python2 /usr/local/bin/python \
  && rm -rf /var/lib/apt/lists/*
 
-# ---- reverse-proxy awareness ----
+# ---- reverse-proxy awareness + access log retention ----
 # Insert RemoteIpValve into the stock server.xml rather than vendoring the whole
 # file, which would have to be re-reconciled on every Tomcat bump. It goes just
 # inside <Host>, ahead of the AccessLogValve declared there.
 #
-# The second edit is not optional. Tomcat invokes the access log after the
-# pipeline unwinds, by which point RemoteIpValve has restored the original
-# remote address, so AccessLogValve would keep logging the proxy; the valve
-# publishes the forwarded values as request attributes instead, and
-# requestAttributesEnabled="true" is what makes AccessLogValve read them.
+# The AccessLogValve edit carries two unrelated attributes:
+#
+#   requestAttributesEnabled="true" is not optional for the proxy case. Tomcat
+#   invokes the access log after the pipeline unwinds, by which point
+#   RemoteIpValve has restored the original remote address, so AccessLogValve
+#   would keep logging the proxy; the valve publishes the forwarded values as
+#   request attributes instead, and this is what makes AccessLogValve read them.
+#
+#   maxDays="30" bounds retention. The valve already rolls the access log daily,
+#   but its default maxDays of -1 keeps every one of those files forever, so on
+#   a busy server it is the fastest-growing thing in the logs volume. The two
+#   log4j files are capped separately, in log4j.properties. Tomcat's own juli
+#   logs need nothing here -- the stock logging.properties already sets
+#   maxDays = 90 on all four handlers.
 #
 # The grep guards are the point of this construct: if a future base image
 # reformats either line the sed silently matches nothing, and a build that
-# fails is better than an image that quietly ships without proxy support.
+# fails is better than an image that quietly ships without proxy support or
+# without log retention.
 COPY tomcat-remoteip-valve.xml /tmp/remoteip-valve.xml
 RUN sed -i \
       -e '/unpackWARs="true" autoDeploy="true">/r /tmp/remoteip-valve.xml' \
-      -e 's|<Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs"|<Valve className="org.apache.catalina.valves.AccessLogValve" requestAttributesEnabled="true" directory="logs"|' \
+      -e 's|<Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs"|<Valve className="org.apache.catalina.valves.AccessLogValve" requestAttributesEnabled="true" maxDays="30" directory="logs"|' \
       /usr/local/tomcat/conf/server.xml \
  && grep -q RemoteIpValve /usr/local/tomcat/conf/server.xml \
  && grep -q requestAttributesEnabled /usr/local/tomcat/conf/server.xml \
+ && grep -q 'maxDays="30"' /usr/local/tomcat/conf/server.xml \
  && rm /tmp/remoteip-valve.xml
 
 # The webapp is unpacked at build time rather than shipped as a WAR for Tomcat

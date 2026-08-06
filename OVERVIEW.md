@@ -238,10 +238,40 @@ writes to `${catalina.base}/logs/engine.log` and
 console output and nothing else — `engine.log` is where a failed alignment job
 explains itself. See [🔍 Monitor Logs](#-monitor-logs) for how to read them.
 
-> ⚠️ **Nothing rotates or prunes these logs.** JABAWS uses plain log4j
-> `FileAppender`s, so `engine.log` and `JABAWSErrorFile.log` grow without bound,
-> and Tomcat's own logs roll daily but are never deleted. For a long-lived
-> deployment, add a retention job against the logs volume.
+#### Rotation and retention
+
+Everything in the logs volume is capped, so the image needs no external
+retention job. Four producers write there, and each is bounded differently:
+
+| File | Rolls | Retention | Configured in |
+|---|---|---|---|
+| `engine.log` | at 10 MB | 5 backups (60 MB) | [`log4j.properties`](log4j.properties) |
+| `JABAWSErrorFile.log` | at 10 MB | 5 backups (60 MB) | [`log4j.properties`](log4j.properties) |
+| `localhost_access_log.<date>.txt` | daily | 30 days | `maxDays` on the valve, [`Dockerfile`](Dockerfile) |
+| `catalina.`/`localhost.`/`manager.`/`host-manager.<date>.log` | daily | 90 days | stock Tomcat `conf/logging.properties` |
+
+Upstream JABAWS ships the two log4j files as plain `FileAppender`s that never
+roll; this image replaces them with `RollingFileAppender`s, which is why
+`log4j.properties` is vendored at the repo root and copied over the WAR's copy
+at build time. Rotation happens in-process — log4j renames and reopens the file
+itself — so no sidecar, cron job or `logrotate` is involved, and there is no
+`copytruncate` hazard from JABAWS holding the descriptor open.
+
+Upstream also leaves log4j additivity on for the `compbio` logger, which sends
+every engine message to both appenders; `engine.log` and `JABAWSErrorFile.log`
+came out byte-identical. This image sets `log4j.additivity.compbio=false`, so
+`engine.log` holds the engine's output and `JABAWSErrorFile.log` holds errors
+from everything else.
+
+To change any of the ceilings, edit `log4j.properties` (log4j files) or the
+`maxDays` attribute in the `sed` block of the `Dockerfile` (access log) and
+rebuild — appender config is read once at webapp start. For a quick change
+without a rebuild, bind-mount your own `log4j.properties` over
+`/usr/local/tomcat/webapps/jabaws/WEB-INF/classes/log4j.properties` and restart.
+
+Note that `docker logs` output is separate: that is Tomcat's console stream,
+held by the Docker log driver, and it is bounded by the daemon's settings
+(`--log-opt max-size` / `max-file`), not by anything in the image.
 
 ### Execution statistics (Derby)
 
