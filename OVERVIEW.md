@@ -116,6 +116,29 @@ note that Jalview will then discover nothing until `testAllServices` is called
 by hand. Timeouts are tunable via `JABAWS_WARMUP_READY_TIMEOUT` (default 300s)
 and `JABAWS_WARMUP_TEST_TIMEOUT` (default 900s).
 
+### Running behind a reverse proxy
+
+The image configures Tomcat's `RemoteIpValve`, so a proxy in front of the
+container only has to send the usual headers — `X-Forwarded-For`,
+`X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`. Tomcat then
+rewrites each request's client IP, scheme, host and port to the external values
+before the webapp sees them, which matters because JABAWS derives the service
+URLs it publishes (and self-tests) from the request. Without it, a container
+behind `https://jabaws.example.org` advertises `http://localhost:8080/...`.
+
+Access logs record the forwarded client rather than the proxy.
+
+Nothing is required to turn this on, and nothing changes when the headers are
+absent — a direct `-p 8080:8080` run behaves exactly as before. In particular
+this is **not** a substitute for the registry warm-up above: a plain port
+remapping with no proxy in front sends no `X-Forwarded-*` headers at all.
+
+`RemoteIpValve` only honours those headers from a trusted peer, and its default
+trust list is the RFC1918 and loopback ranges. That covers the Docker bridge and
+compose networks. A proxy reaching the container from a public address needs an
+explicit `internalProxies` (or `trustedProxies`) regex added to
+`tomcat-remoteip-valve.xml`, followed by a rebuild.
+
 ---
 
 ## Services Provided

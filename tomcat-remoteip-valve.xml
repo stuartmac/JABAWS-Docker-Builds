@@ -1,0 +1,28 @@
+        <!-- Reverse-proxy support. When a proxy fronts the container it must
+             send the X-Forwarded-* headers; this valve then rewrites the
+             request's client IP, scheme, host and port to the external values
+             before the webapp sees it, so RegistryWS advertises URLs that
+             clients can actually reach (it derives them from the request).
+
+             Inert without those headers, so a direct `-p 8080:8080` run is
+             unaffected; see the warm-up note in jabaws-entrypoint.sh for
+             that case, which this does NOT address.
+
+             For %h to log the real client the AccessLogValve below also needs
+             requestAttributesEnabled="true", which the Dockerfile adds: the
+             access log runs after this valve has already restored the original
+             address, so it reads the forwarded value from a request attribute
+             rather than from the request itself.
+
+             RemoteIpValve trusts RFC1918/loopback proxies by default, which
+             covers the Docker bridge; a proxy on a public address needs an
+             explicit internalProxies/trustedProxies regex here. -->
+        <Valve className="org.apache.catalina.valves.RemoteIpValve"
+               remoteIpHeader="x-forwarded-for"
+               protocolHeader="x-forwarded-proto"
+               protocolHeaderHttpsValue="https"
+               portHeader="x-forwarded-port"
+               changeLocalPort="true"
+               hostHeader="x-forwarded-host"
+               changeLocalName="true" />
+

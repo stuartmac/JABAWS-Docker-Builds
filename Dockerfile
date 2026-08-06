@@ -141,6 +141,29 @@ RUN apt-get update \
       && ln -s /usr/bin/python2 /usr/local/bin/python \
  && rm -rf /var/lib/apt/lists/*
 
+# ---- reverse-proxy awareness ----
+# Insert RemoteIpValve into the stock server.xml rather than vendoring the whole
+# file, which would have to be re-reconciled on every Tomcat bump. It goes just
+# inside <Host>, ahead of the AccessLogValve declared there.
+#
+# The second edit is not optional. Tomcat invokes the access log after the
+# pipeline unwinds, by which point RemoteIpValve has restored the original
+# remote address, so AccessLogValve would keep logging the proxy; the valve
+# publishes the forwarded values as request attributes instead, and
+# requestAttributesEnabled="true" is what makes AccessLogValve read them.
+#
+# The grep guards are the point of this construct: if a future base image
+# reformats either line the sed silently matches nothing, and a build that
+# fails is better than an image that quietly ships without proxy support.
+COPY tomcat-remoteip-valve.xml /tmp/remoteip-valve.xml
+RUN sed -i \
+      -e '/unpackWARs="true" autoDeploy="true">/r /tmp/remoteip-valve.xml' \
+      -e 's|<Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs"|<Valve className="org.apache.catalina.valves.AccessLogValve" requestAttributesEnabled="true" directory="logs"|' \
+      /usr/local/tomcat/conf/server.xml \
+ && grep -q RemoteIpValve /usr/local/tomcat/conf/server.xml \
+ && grep -q requestAttributesEnabled /usr/local/tomcat/conf/server.xml \
+ && rm /tmp/remoteip-valve.xml
+
 # The webapp is unpacked at build time rather than shipped as a WAR for Tomcat
 # to explode on first boot. A WAR looks smaller (609 MB vs 772 MB on disk) but
 # isn't: it pulls the same (201 MB vs 200 MB compressed -- a deflated jar can't
