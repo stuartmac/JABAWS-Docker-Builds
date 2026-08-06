@@ -202,6 +202,79 @@ docker run --rm -v jabaws-jobsout:/source -v $(pwd):/backup alpine \
   tar czf /backup/jabaws-jobsout-backup.tar.gz -C /source .
 ```
 
+### Logs are always on a volume
+
+The image declares `VOLUME ["/usr/local/tomcat/logs"]`, so log files never live in
+the container's writable layer. If you don't pass `-v`, Docker creates an
+*anonymous* volume instead — which is left behind every time you `docker rm` the
+container. On a server, always name it as Option A does.
+
+This matters because JABAWS logs to files, not to stdout. Its log4j configuration
+writes to `${catalina.base}/logs/engine.log` and
+`${catalina.base}/logs/JABAWSErrorFile.log`, so `docker logs` shows you Tomcat's
+console output and nothing else — `engine.log` is where a failed alignment job
+explains itself. See [🔍 Monitor Logs](#-monitor-logs) for how to read them.
+
+> ⚠️ **Nothing rotates or prunes these logs.** JABAWS uses plain log4j
+> `FileAppender`s, so `engine.log` and `JABAWSErrorFile.log` grow without bound,
+> and Tomcat's own logs roll daily but are never deleted. For a long-lived
+> deployment, add a retention job against the logs volume.
+
+### Execution statistics (Derby)
+
+JABAWS records job statistics — the ones behind `/jabaws/DisplayStat`,
+`/jabaws/AnnualStat` and `/jabaws/Joblist` — in an embedded Apache Derby database
+at `/usr/local/tomcat/webapps/jabaws/ExecutionStatistic`. That database ships
+inside the image, so by default every rebuild or image update resets the
+statistics to the copy baked into the WAR.
+
+Nothing breaks if you leave it unmounted; you simply lose usage history across
+upgrades. Mount it if that history matters:
+
+```bash
+docker run -d \
+  -p 8080:8080 \
+  -v jabaws-logs:/usr/local/tomcat/logs \
+  -v jabaws-jobsout:/usr/local/tomcat/webapps/jabaws/jobsout \
+  -v jabaws-stats:/usr/local/tomcat/webapps/jabaws/ExecutionStatistic \
+  --name jabaws-server \
+  drsasp/jabaws:latest
+```
+
+Persisting `jobsout` is not a substitute: job directories are pruned after a week
+(`local.jobdir.maxlifespan=168` hours), so the Derby database is the only
+long-term record.
+
+Three constraints apply to this mount specifically:
+
+- **Default (`exploded`) variant only.** The path is inside the webapp, so on the
+  `packed` variant it triggers the same deployment failure described under
+  [🔨 Building the Image](#-building-the-image).
+- **Local disk only — not NFS or CIFS.** Embedded Derby depends on real file
+  locking; a network mount risks corruption rather than a clean error.
+- **One container per volume.** Derby takes an exclusive lock, so a second
+  container sharing the volume will fail to open the database.
+
+A *named* volume is populated from the image the first time it's used, so the
+command above starts from the shipped database and keeps accumulating from there.
+A **bind mount is not** — it presents Derby with an empty directory. If you prefer
+Option B's bind mounts, seed the host directory first:
+
+```bash
+docker run --rm -e JABAWS_WARMUP=0 -v "$(pwd)/stats:/target" drsasp/jabaws:latest cp -a /usr/local/tomcat/webapps/jabaws/ExecutionStatistic/. /target/
+```
+
+To back it up alongside the other volumes:
+
+```bash
+# Backup statistics volume
+docker run --rm -v jabaws-stats:/source -v $(pwd):/backup alpine \
+  tar czf /backup/jabaws-stats-backup.tar.gz -C /source .
+```
+
+> Back up the statistics volume with the container stopped. Copying a Derby
+> database while it's being written to can capture an inconsistent snapshot.
+
 ---
 
 ## 🔨 Building the Image
