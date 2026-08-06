@@ -34,8 +34,8 @@ log() { echo "[jabaws-warmup] $*"; }
 warm_registry() {
   local waited=0
 
-  # Wait for the webapp, not just the port -- the packed variant has to explode
-  # the WAR on first boot before RegistryWS answers.
+  # Wait for the webapp, not just the port -- Tomcat opens 8080 before it has
+  # finished deploying, so RegistryWS 404s for a while after the port is up.
   until curl -sf -o /dev/null "${REGISTRY_URL}?wsdl"; do
     if [ "$waited" -ge "$READY_TIMEOUT" ]; then
       log "RegistryWS did not respond within ${READY_TIMEOUT}s -- skipping warm-up."

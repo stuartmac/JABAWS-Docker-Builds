@@ -5,7 +5,9 @@
 # ─────────────
 # 1. tool-builder   – build every native binary (clustal*, mafft, etc.)
 # 2. war-patcher    – unpack WAR, drop in patched config + binaries, re‑jar
-# 3. runtime        – Tomcat 9.0.107 with Java 8 (JABAWS compatibility)
+#                     (also the --target for extract-patched-war.sh)
+# 3. runtime        – Tomcat 9.0.107 with Java 8 (JABAWS compatibility),
+#                     webapp unpacked at build time
 ################################################################################
 
 ############################
@@ -124,9 +126,9 @@ RUN find binaries/src -type f \( \
 RUN jar cf /tmp/jabaws-patched.war -C . .
 
 ############################
-# Stage 3 - slim Tomcat runtime (shared base for both variants)
+# Stage 3 - slim Tomcat runtime
 ############################
-FROM tomcat:9.0.107-jre8-temurin-jammy AS runtime-base
+FROM tomcat:9.0.107-jre8-temurin-jammy AS runtime
 
 # ---- bring in the runtime libs the native tools need (and Python 2) ----
 # curl is used by the entrypoint to warm the service registry on boot.
@@ -139,11 +141,33 @@ RUN apt-get update \
       && ln -s /usr/bin/python2 /usr/local/bin/python \
  && rm -rf /var/lib/apt/lists/*
 
-# Prevent double scanning if both WAR and exploded dir ever co-exist
-ENV CATALINA_OPTS="-Dtomcat.util.scan.StandardJarScanFilter.jarsToSkip=jabaws.war"
+# The webapp is unpacked at build time rather than shipped as a WAR for Tomcat
+# to explode on first boot. A WAR looks smaller (609 MB vs 772 MB on disk) but
+# isn't: it pulls the same (201 MB vs 200 MB compressed -- a deflated jar can't
+# gzip again, while the unpacked tree can), and Tomcat then re-expands it into
+# every container's writable layer at boot, which measured 271 MB. Unpacking
+# here keeps that in a shared image layer and boots faster.
+#
+# It is also what makes the VOLUMEs below possible. Mounting anything under
+# webapps/jabaws/ pre-creates that directory with an mtime newer than the WAR,
+# and HostConfig then treats it as an already-deployed app and never unpacks --
+# so a WAR-based image serves 404 the moment you mount jobsout.
+#
+# `extract-patched-war.sh` still produces a standalone WAR via --target
+# war-patcher, for deployment into an existing Tomcat.
+COPY --from=war-patcher /work /usr/local/tomcat/webapps/jabaws
 
-# Logs live outside the webapp, so this is safe for both variants
+# Ensure jobsout exists at build time so the volume mounts onto a populated tree
+RUN mkdir -p /usr/local/tomcat/webapps/jabaws/jobsout
+
 VOLUME ["/usr/local/tomcat/logs"]
+VOLUME ["/usr/local/tomcat/webapps/jabaws/jobsout"]
+
+# webapps/jabaws/ExecutionStatistic -- the embedded Derby DB behind the
+# statistics pages -- is deliberately NOT declared here. It ships populated in
+# the image and is optional to persist; declaring it would force an anonymous
+# volume on every run for something most deployments don't need. Mount it
+# explicitly to keep usage history across upgrades (see OVERVIEW.md).
 
 # RegistryWS derives the URLs it self-tests from the request's Host header, so
 # behind `-p <other>:8080` it tries to reach itself on a port that does not
@@ -157,31 +181,3 @@ RUN chmod +x /usr/local/bin/jabaws-entrypoint.sh
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/jabaws-entrypoint.sh"]
 CMD ["catalina.sh", "run"]
-
-############################
-# Stage 4a - packed WAR (smaller image; build with --target packed)
-############################
-FROM runtime-base AS packed
-
-COPY --from=war-patcher /tmp/jabaws-patched.war /usr/local/tomcat/webapps/jabaws.war
-
-# NOTE: deliberately no VOLUME on webapps/jabaws/jobsout here. Tomcat only
-# explodes the WAR into webapps/jabaws/ on first boot, and mounting anything
-# under that path pre-creates the directory with an mtime newer than the WAR --
-# HostConfig then treats it as an already-deployed app and never unpacks it.
-# If you need job outputs on a volume, use the exploded variant instead.
-
-############################
-# Stage 4b - exploded directory (DEFAULT: faster startup, mountable jobsout)
-#
-# This is the last stage in the file, so a bare `docker build` selects it.
-# None of the build scripts pass --target, so keep it last unless they change.
-############################
-FROM runtime-base AS exploded
-
-COPY --from=war-patcher /work /usr/local/tomcat/webapps/jabaws
-
-# Ensure jobsout exists at build time so the volume mounts onto a populated tree
-RUN mkdir -p /usr/local/tomcat/webapps/jabaws/jobsout
-
-VOLUME ["/usr/local/tomcat/webapps/jabaws/jobsout"]

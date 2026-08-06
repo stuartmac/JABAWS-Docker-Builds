@@ -222,9 +222,10 @@ explains itself. See [🔍 Monitor Logs](#-monitor-logs) for how to read them.
 
 ### Execution statistics (Derby)
 
-JABAWS records job statistics — the ones behind `/jabaws/DisplayStat`,
-`/jabaws/AnnualStat` and `/jabaws/Joblist` — in an embedded Apache Derby database
-at `/usr/local/tomcat/webapps/jabaws/ExecutionStatistic`. That database ships
+JABAWS records job statistics — the ones behind `/jabaws/PublicAnnualStat`, and
+the admin-authenticated `/jabaws/DisplayStat`, `/jabaws/AnnualStat` and
+`/jabaws/Joblist` — in an embedded Apache Derby database at
+`/usr/local/tomcat/webapps/jabaws/ExecutionStatistic`. That database ships
 inside the image, so by default every rebuild or image update resets the
 statistics to the copy baked into the WAR.
 
@@ -245,11 +246,8 @@ Persisting `jobsout` is not a substitute: job directories are pruned after a wee
 (`local.jobdir.maxlifespan=168` hours), so the Derby database is the only
 long-term record.
 
-Three constraints apply to this mount specifically:
+Two constraints apply to this mount specifically:
 
-- **Default (`exploded`) variant only.** The path is inside the webapp, so on the
-  `packed` variant it triggers the same deployment failure described under
-  [🔨 Building the Image](#-building-the-image).
 - **Local disk only — not NFS or CIFS.** Embedded Derby depends on real file
   locking; a network mount risks corruption rather than a clean error.
 - **One container per volume.** Derby takes an exclusive lock, so a second
@@ -289,24 +287,17 @@ or emulation involved.
 docker build -t jabaws:local .
 ```
 
-The Dockerfile offers two runtime variants as build targets:
+The image ships the webapp already unpacked (~772 MB) rather than as a WAR for
+Tomcat to expand on first boot. Shipping the WAR produces a smaller image on disk
+(~609 MB) but no smaller a download — a deflated jar can't be compressed again,
+so both pull at ~200 MB — and Tomcat then re-expands it into every container's
+writable layer at startup, measured at 271 MB per container. Unpacking at build
+time keeps that in a shared image layer, starts faster, and is what allows
+volumes to be mounted under `webapps/jabaws/`.
 
-| Target | Size | Notes |
-| --- | --- | --- |
-| `exploded` (default) | ~772 MB | Webapp unpacked at build time. Faster startup, and the only variant that supports mounting a volume at `jobsout`. |
-| `packed` | ~608 MB | Ships the WAR; Tomcat unpacks it on first boot. Smaller to store and pull. |
-
-```bash
-# Smaller image, no jobsout volume
-docker build --target packed -t jabaws:slim .
-```
-
-> ⚠️ **The `packed` variant cannot be used with a `jobsout` volume.** Mounting
-> anything under `/usr/local/tomcat/webapps/jabaws/` creates that directory before
-> Tomcat starts, so Tomcat treats it as an already-deployed application and never
-> unpacks the WAR — the service returns 404. Use `packed` only without the
-> `jobsout` mount shown in [Run a Persistent Instance](#run-a-persistent-instance);
-> otherwise stay on the default.
+If you want a standalone WAR to deploy into an existing Tomcat, use
+`extract-patched-war.sh`, which builds the `war-patcher` stage and copies the
+patched WAR out.
 
 To get a shell with the tool sources *and* a full compiler toolchain — useful when
 experimenting with compilation flags — build the first stage on its own:
