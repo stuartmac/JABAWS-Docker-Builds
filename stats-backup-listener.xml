@@ -1,0 +1,6 @@
+	<!-- Nightly online backup of the execution-statistics database.
+	     Compiled into WEB-INF/classes by the war-patcher stage; the source and
+	     the reasoning live in StatsBackup.java at the repo root. -->
+	<listener>
+		<listener-class>jabaws.docker.StatsBackup</listener-class>
+	</listener>

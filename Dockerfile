@@ -3,12 +3,22 @@
 #
 # Stage layout
 # ─────────────
+# 0. tomcat-base    – the Tomcat image, named once so war-patcher can borrow its
+#                     servlet-api.jar and runtime can build on the same version
 # 1. tool-builder   – build every native binary (clustal*, mafft, etc.)
 # 2. war-patcher    – unpack WAR, drop in patched config + binaries, re‑jar
 #                     (also the --target for extract-patched-war.sh)
 # 3. runtime        – Tomcat 9.0.107 with Java 8 (JABAWS compatibility),
 #                     webapp unpacked at build time
 ################################################################################
+
+############################
+# Stage 0 – Tomcat base
+############################
+# Named rather than repeated: war-patcher compiles against this image's
+# servlet-api.jar and the runtime stage is built from it, so a Tomcat bump is a
+# one-line change and the two can never drift apart.
+FROM tomcat:9.0.107-jre8-temurin-jammy AS tomcat-base
 
 ############################
 # Stage 1 – build native tools
@@ -114,6 +124,30 @@ COPY Executable.properties conf/Executable.properties
 # container cannot fill the logs volume. See log4j.properties for the details.
 COPY log4j.properties WEB-INF/classes/log4j.properties
 
+# 2a) Compile the nightly statistics-backup listener into the webapp
+#
+# The statistics database is embedded Derby, so the Tomcat JVM holds an
+# exclusive lock on it and no external process can dump it while the container
+# runs. StatsBackup.java runs inside that JVM and calls Derby's own online
+# backup on a schedule; see its header comment for the full rationale, and
+# OVERVIEW.md for the environment variables that configure it.
+#
+# servlet-api.jar is compile-time only (Tomcat provides it at runtime), which is
+# why it is borrowed from tomcat-base rather than added to WEB-INF/lib.
+COPY --from=tomcat-base /usr/local/tomcat/lib/servlet-api.jar /tmp/servlet-api.jar
+COPY StatsBackup.java /tmp/StatsBackup.java
+RUN javac -cp /tmp/servlet-api.jar -d WEB-INF/classes /tmp/StatsBackup.java \
+ && test -f WEB-INF/classes/jabaws/docker/StatsBackup.class
+
+# 2b) Register the listener. As with the server.xml edits in the runtime stage,
+# the grep guard is the point: if upstream ever renames that comment the sed
+# matches nothing, and a failed build beats an image whose backups silently
+# never run.
+COPY stats-backup-listener.xml /tmp/stats-backup-listener.xml
+RUN sed -i '/<!-- JABAWS listeners -->/r /tmp/stats-backup-listener.xml' WEB-INF/web.xml \
+ && grep -q jabaws.docker.StatsBackup WEB-INF/web.xml \
+ && rm /tmp/stats-backup-listener.xml /tmp/StatsBackup.java /tmp/servlet-api.jar
+
 # 3) Inject freshly‑built binaries into the WAR root so they unpack to /binaries/*
 COPY --from=tool-builder /build ./binaries/src
 
@@ -132,7 +166,7 @@ RUN jar cf /tmp/jabaws-patched.war -C . .
 ############################
 # Stage 3 - slim Tomcat runtime
 ############################
-FROM tomcat:9.0.107-jre8-temurin-jammy AS runtime
+FROM tomcat-base AS runtime
 
 # ---- bring in the runtime libs the native tools need (and Python 2) ----
 # curl is used by the entrypoint to warm the service registry on boot.
@@ -197,6 +231,14 @@ COPY --from=war-patcher /work /usr/local/tomcat/webapps/jabaws
 
 # Ensure jobsout exists at build time so the volume mounts onto a populated tree
 RUN mkdir -p /usr/local/tomcat/webapps/jabaws/jobsout
+
+# Default destination for the nightly statistics backup (JABAWS_STATS_BACKUP_DIR
+# overrides it). Created here so a bind mount lands on an existing directory.
+# Left undeclared as a VOLUME for the same reason ExecutionStatistic is: an
+# anonymous volume per run would be worse than writing to the container layer,
+# which is where nightly snapshots go, capped at JABAWS_STATS_BACKUP_KEEP, if
+# nobody mounts anything.
+RUN mkdir -p /usr/local/tomcat/stats-backups
 
 VOLUME ["/usr/local/tomcat/logs"]
 VOLUME ["/usr/local/tomcat/webapps/jabaws/jobsout"]

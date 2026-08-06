@@ -291,9 +291,12 @@ docker run -d \
   -v jabaws-logs:/usr/local/tomcat/logs \
   -v jabaws-jobsout:/usr/local/tomcat/webapps/jabaws/jobsout \
   -v jabaws-stats:/usr/local/tomcat/webapps/jabaws/ExecutionStatistic \
+  -v jabaws-stats-backups:/usr/local/tomcat/stats-backups \
   --name jabaws-server \
   drsasp/jabaws:latest
 ```
+
+The fourth volume is where the [nightly backup](#nightly-backup) lands.
 
 Persisting `jobsout` is not a substitute: job directories are pruned after a week
 (`local.jobdir.maxlifespan=168` hours), so the Derby database is the only
@@ -315,7 +318,7 @@ Option B's bind mounts, seed the host directory first:
 docker run --rm -e JABAWS_WARMUP=0 -v "$(pwd)/stats:/target" drsasp/jabaws:latest cp -a /usr/local/tomcat/webapps/jabaws/ExecutionStatistic/. /target/
 ```
 
-To back it up alongside the other volumes:
+To snapshot the volume itself, alongside the others:
 
 ```bash
 # Backup statistics volume
@@ -323,8 +326,77 @@ docker run --rm -v jabaws-stats:/source -v $(pwd):/backup alpine \
   tar czf /backup/jabaws-stats-backup.tar.gz -C /source .
 ```
 
-> Back up the statistics volume with the container stopped. Copying a Derby
-> database while it's being written to can capture an inconsistent snapshot.
+> Run that one with the container **stopped**. Copying a Derby database while
+> it's being written to can capture an inconsistent snapshot. The nightly
+> backup below has no such requirement — prefer it for routine backups, and
+> keep this recipe for one-off snapshots of a container you're about to upgrade.
+
+#### Nightly backup
+
+The image backs the statistics database up on its own every night — no host
+cron, no sidecar, nothing to install. A listener compiled into the webapp
+([`StatsBackup.java`](StatsBackup.java)) calls Derby's
+`SYSCS_UTIL.SYSCS_BACKUP_DATABASE` on the live database and then exports
+`exec_stat` to CSV.
+
+Going through the JVM is what makes this possible while the server runs.
+Embedded Derby gives the Tomcat JVM an exclusive lock, so no external process —
+not `ij`, not `docker exec` — can open the database at all, and a plain file
+copy taken underneath a live writer may not be recoverable. A backup requested
+from inside the process that already holds the database open is quiesced and
+checkpointed first, so it is consistent by construction and needs no downtime:
+measured at ~0.2 s for a 3.7 MB database, with the service answering throughout.
+
+Each run writes one timestamped directory:
+
+```
+/usr/local/tomcat/stats-backups/20260806-031500/
+├── ExecutionStatistic/   # complete Derby database, restorable as-is
+└── exec_stat.csv         # every row, comma-separated, strings quoted
+```
+
+Keep both: the Derby copy is what you restore, and the CSV is what stays
+readable years later when no compatible Derby is to hand.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `JABAWS_STATS_BACKUP` | `1` | `0` disables the schedule entirely |
+| `JABAWS_STATS_BACKUP_DIR` | `/usr/local/tomcat/stats-backups` | destination root |
+| `JABAWS_STATS_BACKUP_AT` | `03:15` | `HH:MM`, container-local time |
+| `JABAWS_STATS_BACKUP_KEEP` | `7` | snapshots kept; older ones pruned after each successful run |
+
+Two things to know about those defaults. The container clock is **UTC** unless
+you pass `-e TZ=Europe/London`, so `03:15` means 03:15 UTC out of the box. And
+the default destination is inside the container, which means snapshots die with
+`docker rm` — mount `/usr/local/tomcat/stats-backups` (as the run command above
+does) if the backups are meant to outlive the container.
+
+Pruning only ever deletes directories whose names match the `YYYYMMDD-HHMMSS`
+pattern, so the destination is safe to share with other files.
+
+Progress and failures go to `logs/localhost.<date>.log` in the logs volume —
+`ServletContext.log`, not `docker logs`:
+
+```bash
+docker exec jabaws-server grep stats-backup /usr/local/tomcat/logs/localhost.$(date +%Y-%m-%d).log
+```
+
+A failed run logs the exception and leaves the schedule intact, so a transient
+problem costs one night rather than every night after it.
+
+#### Restoring
+
+Restoring *does* need the container stopped, since Derby holds the live database
+open:
+
+```bash
+docker stop jabaws-server
+docker run --rm \
+  -v jabaws-stats:/db \
+  -v jabaws-stats-backups:/backups \
+  alpine sh -c 'rm -rf /db/* && cp -a /backups/20260806-031500/ExecutionStatistic/. /db/'
+docker start jabaws-server
+```
 
 ---
 
