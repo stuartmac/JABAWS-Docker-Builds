@@ -11,6 +11,9 @@ jabaws-patched*.war
 *.so
 *.deps
 
+# Editor workspaces — these hardcode local paths outside the repo
+*.code-workspace
+
 # IDE files
 .vscode/
 .idea/

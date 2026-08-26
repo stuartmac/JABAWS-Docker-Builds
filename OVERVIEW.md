@@ -449,12 +449,13 @@ writable layer at startup, measured at 271 MB per container. Unpacking at build
 time keeps that in a shared image layer, starts faster, and is what allows
 volumes to be mounted under `webapps/jabaws/`.
 
-Building on a host that has Podman rather than Docker works the same way, but
-don't use the build scripts there: `/usr/bin/docker` on RHEL-family hosts is
-usually the `podman-docker` shim, and the scripts check for a Docker daemon that
-doesn't exist and don't forward proxy settings. Call `podman build` directly, and
-see [deploy/README.md](deploy/README.md) for the host-build recipe — short-name
-resolution, proxies, and running the build detached.
+The build scripts use whichever engine they find, preferring Podman; set
+`CONTAINER_ENGINE` to choose. Only `multi-platform-build.sh` is Docker-specific,
+since it builds a multi-arch manifest with Buildx. On a host that builds for
+itself — the usual case for Podman — that script isn't needed at all.
+
+For a host build behind a proxy or with short-name resolution enforced, see
+[deploy/README.md](deploy/README.md), which also scripts the whole thing.
 
 If you want a standalone WAR to deploy into an existing Tomcat, use
 `extract-patched-war.sh`, which builds the `war-patcher` stage and copies the

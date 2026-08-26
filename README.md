@@ -156,7 +156,18 @@ Ensures cross-platform builds and clean runtimes.
 
 ---
 
+## 🧰 Container Engine
+
+The scripts run under either Podman or Docker, preferring Podman when both are
+present. Override with `CONTAINER_ENGINE=docker ./build.sh`. The one exception is
+`multi-platform-build.sh`, which needs Docker Buildx to assemble a multi-arch
+manifest; a host building for itself doesn't need it.
+
+To build and deploy on a server — proxies, short-name resolution, systemd — see
+[deploy/README.md](deploy/README.md).
+
 ## ✅ Verified On
 - macOS (Apple Silicon) via Docker Desktop
+- RHEL 9 (x86_64) with rootless Podman 5.8
 - Tomcat 9.0.107 with Java 8 (JABAWS compatibility)
 - Included tools compiled per platform

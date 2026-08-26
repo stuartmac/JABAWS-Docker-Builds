@@ -39,6 +39,21 @@ REGISTRY=""
 CHECK_ONLY=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Container engine. Podman and Docker are interchangeable for everything this
+# script does, so pick whichever is present rather than hard-coding one. Set
+# CONTAINER_ENGINE to override.
+ENGINE="${CONTAINER_ENGINE:-}"
+if [[ -z "$ENGINE" ]]; then
+    if command -v podman &> /dev/null; then
+        ENGINE=podman
+    elif command -v docker &> /dev/null; then
+        ENGINE=docker
+    else
+        echo "Error: neither podman nor docker found in PATH" >&2
+        exit 1
+    fi
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -111,6 +126,12 @@ check_prerequisites() {
     local all_good=true
     
     # Check Docker
+    if [[ "$ENGINE" != docker ]]; then
+        print_error "This script builds multi-arch manifests with Docker Buildx, which $ENGINE does not provide."
+        print_error "On a Podman host, build natively on each target — see deploy/README.md."
+        exit 1
+    fi
+
     if ! command -v docker &> /dev/null; then
         print_error "Docker is not installed or not in PATH"
         all_good=false

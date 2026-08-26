@@ -13,6 +13,21 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_TAG="jabaws:dev"
 
+# Container engine. Podman and Docker are interchangeable for everything this
+# script does, so pick whichever is present rather than hard-coding one. Set
+# CONTAINER_ENGINE to override.
+ENGINE="${CONTAINER_ENGINE:-}"
+if [[ -z "$ENGINE" ]]; then
+    if command -v podman &> /dev/null; then
+        ENGINE=podman
+    elif command -v docker &> /dev/null; then
+        ENGINE=docker
+    else
+        echo "Error: neither podman nor docker found in PATH" >&2
+        exit 1
+    fi
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -107,23 +122,22 @@ done
 # Stop container if requested
 if [[ "$STOP_CONTAINER" == true ]]; then
     print_info "Stopping jabaws-dev container..."
-    docker stop jabaws-dev 2>/dev/null || print_warning "Container jabaws-dev not running"
-    docker rm jabaws-dev 2>/dev/null || print_warning "Container jabaws-dev not found"
+    "$ENGINE" stop jabaws-dev 2>/dev/null || print_warning "Container jabaws-dev not running"
+    "$ENGINE" rm jabaws-dev 2>/dev/null || print_warning "Container jabaws-dev not found"
     exit 0
 fi
 
 # Show logs if requested
 if [[ "$SHOW_LOGS" == true ]]; then
     print_info "Showing logs for jabaws-dev container..."
-    docker logs -f jabaws-dev 2>/dev/null || print_error "Container jabaws-dev not found or not running"
+    "$ENGINE" logs -f jabaws-dev 2>/dev/null || print_error "Container jabaws-dev not found or not running"
     exit 0
 fi
 
 print_info "Starting JABAWS development build..."
 
-# Check Docker
-if ! docker info &> /dev/null; then
-    print_error "Docker daemon is not running"
+if ! "$ENGINE" info &> /dev/null; then
+    print_error "$ENGINE is installed but not usable ('$ENGINE info' failed)"
     exit 1
 fi
 
@@ -154,13 +168,17 @@ fi
 # Run container if requested
 if [[ "$RUN_AFTER_BUILD" == true ]]; then
     print_info "Stopping any existing jabaws-dev container..."
-    docker stop jabaws-dev 2>/dev/null || true
-    docker rm jabaws-dev 2>/dev/null || true
+    "$ENGINE" stop jabaws-dev 2>/dev/null || true
+    "$ENGINE" rm jabaws-dev 2>/dev/null || true
     
     print_info "Starting new jabaws-dev container..."
-    docker run -d \
+    # Named volumes, so repeated rebuilds don't strand an anonymous logs
+    # volume on every rm — the image declares VOLUME on the logs directory.
+    "$ENGINE" run -d \
         --name jabaws-dev \
         -p 8080:8080 \
+        -v jabaws-dev-logs:/usr/local/tomcat/logs \
+        -v jabaws-dev-jobsout:/usr/local/tomcat/webapps/jabaws/jobsout \
         "$IMAGE_TAG"
     
     print_success "Container started: jabaws-dev"

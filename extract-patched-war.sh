@@ -6,9 +6,24 @@
 
 set -e
 
-# Ensure script runs from its own directory for correct Docker context
+# Ensure script runs from its own directory for correct build context
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# Container engine. Podman and Docker are interchangeable for everything this
+# script does, so pick whichever is present rather than hard-coding one. Set
+# CONTAINER_ENGINE to override.
+ENGINE="${CONTAINER_ENGINE:-}"
+if [[ -z "$ENGINE" ]]; then
+    if command -v podman &> /dev/null; then
+        ENGINE=podman
+    elif command -v docker &> /dev/null; then
+        ENGINE=docker
+    else
+        echo "Error: neither podman nor docker found in PATH" >&2
+        exit 1
+    fi
+fi
 
 IMAGE_NAME="jabaws-war-patcher"
 CONTAINER_NAME="temp-jabaws-war"
@@ -35,21 +50,21 @@ done
 
 WAR_PATH_ON_HOST="$SCRIPT_DIR/jabaws-patched${PLATFORM_SUFFIX}.war"
 
-# Build the Docker image up to the war-patcher stage
-docker build $PLATFORM_ARG --target=war-patcher -t "$IMAGE_NAME" .
+# Build the image up to the war-patcher stage
+"$ENGINE" build $PLATFORM_ARG --target=war-patcher -t "$IMAGE_NAME" .
 
 # Remove any existing container with the same name to avoid conflicts
-if docker ps -a --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}$"; then
-  docker rm -f "$CONTAINER_NAME"
+if "$ENGINE" ps -a --format '{{.Names}}' | grep -Eq "^${CONTAINER_NAME}$"; then
+  "$ENGINE" rm -f "$CONTAINER_NAME"
 fi
 
 # Create a temporary container from the image
-docker create --name "$CONTAINER_NAME" "$IMAGE_NAME"
+"$ENGINE" create --name "$CONTAINER_NAME" "$IMAGE_NAME"
 
 # Copy the patched WAR from the container to the host
-docker cp "$CONTAINER_NAME":"$WAR_PATH_IN_CONTAINER" "$WAR_PATH_ON_HOST"
+"$ENGINE" cp "$CONTAINER_NAME":"$WAR_PATH_IN_CONTAINER" "$WAR_PATH_ON_HOST"
 
 # Clean up the temporary container
-docker rm "$CONTAINER_NAME"
+"$ENGINE" rm "$CONTAINER_NAME"
 
 echo "Extracted patched WAR to $WAR_PATH_ON_HOST"

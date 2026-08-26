@@ -42,6 +42,21 @@ PUSH_IMAGE=false
 MULTI_PLATFORM=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Container engine. Podman and Docker are interchangeable for everything this
+# script does, so pick whichever is present rather than hard-coding one. Set
+# CONTAINER_ENGINE to override.
+ENGINE="${CONTAINER_ENGINE:-}"
+if [[ -z "$ENGINE" ]]; then
+    if command -v podman &> /dev/null; then
+        ENGINE=podman
+    elif command -v docker &> /dev/null; then
+        ENGINE=docker
+    else
+        echo "Error: neither podman nor docker found in PATH" >&2
+        exit 1
+    fi
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -134,23 +149,24 @@ detect_platform() {
     fi
 }
 
-# Function to validate Docker installation
-check_docker() {
-    if ! command -v docker &> /dev/null; then
-        print_error "Docker is not installed or not in PATH"
+# Function to validate the container engine
+check_engine() {
+    if ! "$ENGINE" info &> /dev/null; then
+        print_error "$ENGINE is installed but not usable ('$ENGINE info' failed)"
         exit 1
     fi
-    
-    if ! docker info &> /dev/null; then
-        print_error "Docker daemon is not running"
-        exit 1
-    fi
-    
-    print_status "Docker is available and running"
+
+    print_status "Using $ENGINE"
 }
 
 # Function to check buildx support
 check_buildx_support() {
+    if [[ "$ENGINE" != docker ]]; then
+        print_error "Multi-platform builds are implemented here with Docker Buildx, which $ENGINE does not provide"
+        print_error "Build natively on each target host instead — see deploy/README.md"
+        exit 1
+    fi
+
     if ! docker buildx version &> /dev/null; then
         print_error "Docker Buildx is not available"
         print_error "Multi-platform builds require Docker Buildx"
@@ -264,7 +280,7 @@ build_docker_image() {
     
     cd "$SCRIPT_DIR"
     
-    if docker build "${docker_args[@]}" -t "$IMAGE_TAG" .; then
+    if "$ENGINE" build "${docker_args[@]}" -t "$IMAGE_TAG" .; then
         print_success "Docker image built successfully: $IMAGE_TAG"
     else
         print_error "Docker build failed"
@@ -319,7 +335,7 @@ push_image() {
         print_header "Pushing Docker Image"
         print_status "Pushing $IMAGE_TAG to registry..."
         
-        if docker push "$IMAGE_TAG"; then
+        if "$ENGINE" push "$IMAGE_TAG"; then
             print_success "Image pushed successfully"
         else
             print_error "Failed to push image"
@@ -346,16 +362,16 @@ show_summary() {
     
     if [[ "$MULTI_PLATFORM" == true ]]; then
         echo "Multi-platform image available. To run:"
-        echo "  # On any platform (Docker will pull correct architecture)"
-        echo "  docker run -p 8080:8080 $IMAGE_TAG"
+        echo "  # On any platform (the engine pulls the correct architecture)"
+        echo "  $ENGINE run -p 8080:8080 $IMAGE_TAG"
     else
         echo "To run the container:"
         if [[ "$PLATFORM" == "linux/amd64" ]]; then
-            echo "  docker run --platform=linux/amd64 -p 8080:8080 $IMAGE_TAG"
+            echo "  $ENGINE run --platform=linux/amd64 -p 8080:8080 $IMAGE_TAG"
         elif [[ "$PLATFORM" == "linux/arm64" ]]; then
-            echo "  docker run --platform=linux/arm64 -p 8080:8080 $IMAGE_TAG"
+            echo "  $ENGINE run --platform=linux/arm64 -p 8080:8080 $IMAGE_TAG"
         else
-            echo "  docker run -p 8080:8080 $IMAGE_TAG"
+            echo "  $ENGINE run -p 8080:8080 $IMAGE_TAG"
         fi
     fi
     echo
@@ -444,7 +460,7 @@ echo "Starting build process..."
 echo
 
 # Check prerequisites
-check_docker
+check_engine
 
 # Prepare or verify dependencies
 if [[ "$SKIP_DEPS" == true ]]; then

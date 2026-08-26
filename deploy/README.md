@@ -43,8 +43,10 @@ are the same workarounds.
 RHEL sets `short-name-mode = "enforcing"` in `/etc/containers/registries.conf`,
 so the Dockerfile's unqualified `FROM ubuntu:22.04`,
 `eclipse-temurin:8-jdk-jammy` and `tomcat:9.0.107-jre8-temurin-jammy` prompt for a
-registry — which fails outright in a scripted build. Pull fully qualified, tag
-short, then build without pulling:
+registry — which fails outright in a scripted build. Podman's default pull
+policy (`missing`) leaves images already in local storage alone, so pulling them
+under their fully qualified names and tagging them short is enough; `--pull=never`
+then makes a missing base fail immediately rather than at the registry:
 
 ```bash
 for img in docker.io/library/ubuntu:22.04 \
@@ -87,17 +89,16 @@ curl -fsSL -o dependencies/config.sub \
 mkdir -p dependencies/jabaws && unzip -q dependencies/jabaws.war -d dependencies/jabaws
 ```
 
-The build itself needs the proxy too, for `apt-get` in the first stage. Podman
-forwards the *uppercase* variables into the build, and a host that only sets the
-lowercase ones will fail at step 2:
+The build itself needs the proxy too, for `apt-get` in the first stage. Nothing
+special is required: `podman build --http-proxy` defaults to true and passes
+`http_proxy`, `https_proxy`, `ftp_proxy`, `no_proxy` *and* their uppercase forms
+into every `RUN`. Set them however your host normally does; `deploy.env` is the
+place to do it per host, along with `NO_PROXY_EXTRA` for hosts that must be
+reached directly.
 
-```bash
-export HTTP_PROXY="$http_proxy" HTTPS_PROXY="$https_proxy"
-export NO_PROXY="localhost,127.0.0.1"   # plus any host reachable only directly
-```
-
-`deploy.env` sets all of this per host — `HTTP_PROXY`, `NO_PROXY_EXTRA`,
-`WAR_NOPROXY`, and `*_URL` overrides for the mirrors.
+What does bite is a proxy that reaches a repository intermittently — one failed
+`apt-get` used to kill a fifteen-minute build at step two. Both apt stages now
+set `Acquire::Retries "3"`.
 
 ### Dependency integrity
 
