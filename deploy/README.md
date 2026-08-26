@@ -109,15 +109,24 @@ aborts before anything is built. Files already present in `dependencies/` are
 verified too, so a corrupted or substituted artefact can't survive into a later
 build.
 
-The pins are trust-on-first-use. Record them once, on a host whose downloads you
-are prepared to vouch for, and commit the result:
+The pins that ship with the repo were established as follows:
+
+| File | Basis |
+|---|---|
+| `jabaws.war` | two independent downloads eight months apart agree; upstream publishes no checksum or signature of its own |
+| `Python-2.7.13.tgz` | matches the MD5 published on python.org for the release |
+| `config.guess`, `config.sub` | taken from the immutable `gcc-13.2.0` tag — the copies on `master` change over time and cannot be pinned |
+
+If you point a `*_URL` at a different mirror, re-record and commit the result:
 
 ```bash
 ./deploy/podman-deploy.sh deps checksums
 ```
 
-If the file is absent the step still runs, but warns on every download that it
-cannot verify what arrived.
+A file already in `dependencies/` that fails its pin is refused too, with the
+remedy — delete it and re-run to fetch a fresh copy. If the checksum file is
+absent entirely the step still runs, but warns on every download that it cannot
+verify what arrived.
 
 ### Long builds over SSH
 

@@ -1,0 +1,18 @@
+# sha256 checksums for build dependencies. Verified on every fetch by
+# podman-deploy.sh; a mismatch aborts before anything is built.
+#
+# Provenance:
+#   jabaws.war        two independent downloads from the upstream archive, taken
+#                     eight months apart, agree. Upstream publishes no checksum
+#                     or signature of its own, so this is the strongest
+#                     assurance available for it.
+#   Python-2.7.13.tgz matches the MD5 published on python.org for this release
+#                     (17add4bf0ad0ec2f08e0cae6d205c700).
+#   config.guess      from the gcc-13.2.0 tag, which is immutable — the same
+#   config.sub        files on master change over time and cannot be pinned.
+#
+# Re-record with: ./deploy/podman-deploy.sh deps checksums
+d3c40587c1d977f9d0434691213724858cd18d068e8eb95eb68f2b4fc94a2e02  jabaws.war
+a4f05a0720ce0fd92626f0278b6b433eee9a6173ddf2bced7957dfb599a5ece1  Python-2.7.13.tgz
+7d1e3c79b86de601c3a0457855ab854dffd15163f53c91edac54a7be2e9c931b  config.guess
+71b8d73e46e0c31b1dc91ba5306f5ef0af009273b3bb283f31d8dad69666fa9e  config.sub

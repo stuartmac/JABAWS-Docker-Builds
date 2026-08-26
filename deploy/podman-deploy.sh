@@ -71,8 +71,10 @@ MIN_FREE_GB="${MIN_FREE_GB:-20}"
 RUN_USER="${USER:-$(id -un)}"
 WAR_URL="${WAR_URL:-http://www.compbio.dundee.ac.uk/jabaws22/archive/jabaws.war}"
 PYTHON_URL="${PYTHON_URL:-https://www.python.org/ftp/python/2.7.13/Python-2.7.13.tgz}"
-CONFIG_GUESS_URL="${CONFIG_GUESS_URL:-https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.guess}"
-CONFIG_SUB_URL="${CONFIG_SUB_URL:-https://raw.githubusercontent.com/gcc-mirror/gcc/master/config.sub}"
+# Pinned to a tag, not a branch: config.guess/config.sub on master change over
+# time, which would break the checksums below on every upstream update.
+CONFIG_GUESS_URL="${CONFIG_GUESS_URL:-https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-13.2.0/config.guess}"
+CONFIG_SUB_URL="${CONFIG_SUB_URL:-https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-13.2.0/config.sub}"
 
 # Proxy: honour whatever is already set, export the uppercase forms the build needs.
 export HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-}}"
@@ -166,11 +168,12 @@ sha256_of() {
 
 pinned_sum() {  # pinned_sum <basename> -> sha256, or empty if not pinned
     [[ -f "$CHECKSUM_FILE" ]] || return 0
-    awk -v f="$1" '$2 == f {print $1}' "$CHECKSUM_FILE" | head -1
+    # No interval expressions: mawk (the default awk on Debian/Ubuntu) lacks them.
+    awk -v f="$1" '/^[ \t]*#/ { next } length($1) == 64 && $1 ~ /^[0-9a-f]+$/ && $2 == f { print $1 }' "$CHECKSUM_FILE" | head -1
 }
 
-verify_file() {  # verify_file <path>; dies on mismatch, warns if unpinned
-    local path="$1" name want got
+verify_file() {  # verify_file <path> [existing]; dies on mismatch, warns if unpinned
+    local path="$1" existing="${2:-}" name want got
     name="$(basename "$path")"
     want="$(pinned_sum "$name")"
     if [[ -z "$want" ]]; then
@@ -179,6 +182,7 @@ verify_file() {  # verify_file <path>; dies on mismatch, warns if unpinned
     fi
     got="$(sha256_of "$path")"
     if [[ "$got" != "$want" ]]; then
+        [[ -n "$existing" ]] && warn "delete $path and re-run to fetch a fresh copy"
         die "$name failed checksum: expected $want, got $got — refusing to build with it"
     fi
     ok "$name verified"
@@ -237,7 +241,7 @@ step_deps() {
 
         if [[ -s "$dest" ]]; then
             ok "have $name"
-            [[ "$DRY_RUN" == true ]] || verify_file "$dest"
+            [[ "$DRY_RUN" == true ]] || verify_file "$dest" existing
             return 0
         fi
         if [[ "$DRY_RUN" == true ]]; then
