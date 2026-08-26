@@ -18,6 +18,8 @@
 #   start        start the unit via systemctl
 #   verify       smoke-test the endpoints
 #
+#   checksums    record dependency checksums (not part of the default run)
+#
 # Options:
 #   -h, --help       show this help
 #   -f, --env FILE   env file to source (default: deploy/deploy.env)
@@ -44,7 +46,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)    sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -f|--env)     ENV_FILE="$2"; shift 2 ;;
         -n|--dry-run) DRY_RUN=true; shift ;;
-        preflight|deps|bases|build|unit|start|verify) STEPS+=("$1"); shift ;;
+        preflight|deps|bases|build|unit|start|verify|checksums) STEPS+=("$1"); shift ;;
         *) die "unknown argument: $1 (try --help)" ;;
     esac
 done
@@ -150,19 +152,110 @@ step_preflight() {
 }
 
 ################################################################################
+################################################################################
+# Dependency integrity
+#
+# The upstream WAR is 122 MB fetched over plain HTTP, and on a proxied host it
+# arrives via a middlebox we don't control. Pin what we expect to receive.
+CHECKSUM_FILE="${CHECKSUM_FILE:-$SCRIPT_DIR/dependencies.sha256}"
+
+sha256_of() {
+    if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
+    else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+pinned_sum() {  # pinned_sum <basename> -> sha256, or empty if not pinned
+    [[ -f "$CHECKSUM_FILE" ]] || return 0
+    awk -v f="$1" '$2 == f {print $1}' "$CHECKSUM_FILE" | head -1
+}
+
+verify_file() {  # verify_file <path>; dies on mismatch, warns if unpinned
+    local path="$1" name want got
+    name="$(basename "$path")"
+    want="$(pinned_sum "$name")"
+    if [[ -z "$want" ]]; then
+        warn "$name is not pinned in $(basename "$CHECKSUM_FILE") — cannot verify what was downloaded"
+        return 0
+    fi
+    got="$(sha256_of "$path")"
+    if [[ "$got" != "$want" ]]; then
+        die "$name failed checksum: expected $want, got $got — refusing to build with it"
+    fi
+    ok "$name verified"
+}
+
+# Choose a route to a host: through the proxy if it can reach it, directly if
+# not. Probing beats making the operator guess, and reports which one worked.
+pick_route() {  # pick_route <url> <force_direct> -> sets ROUTE_ARGS / ROUTE_NAME
+    local url="$1" force_direct="${2:-}"
+    ROUTE_ARGS=(); ROUTE_NAME="direct"
+
+    if [[ -n "$force_direct" ]]; then
+        ROUTE_ARGS=(--noproxy '*'); ROUTE_NAME="direct (forced)"
+        return 0
+    fi
+    if [[ -z "$HTTP_PROXY" ]]; then
+        return 0   # no proxy configured; nothing to choose between
+    fi
+    if curl -sS -o /dev/null -m 20 -r 0-0 "$url" 2>/dev/null; then
+        ROUTE_NAME="proxy"
+        return 0
+    fi
+    local host="${url#*://}"; host="${host%%/*}"
+    warn "proxy cannot reach $host — trying a direct connection"
+    if curl -sS -o /dev/null -m 20 -r 0-0 --noproxy '*' "$url" 2>/dev/null; then
+        ROUTE_ARGS=(--noproxy '*'); ROUTE_NAME="direct (proxy bypassed)"
+        return 0
+    fi
+    die "neither the proxy nor a direct connection can reach $url — set a mirror via the matching *_URL variable"
+}
+
+# Prefer TLS when the host offers it, even if the pinned URL is http://.
+prefer_https() {  # prefer_https <url> -> echoes url to use
+    local url="$1"
+    [[ "$url" == http://* ]] || { echo "$url"; return; }
+    local https="https://${url#http://}"
+    if curl -sS -o /dev/null -m 15 -r 0-0 "$https" 2>/dev/null \
+       || curl -sS -o /dev/null -m 15 -r 0-0 --noproxy '*' "$https" 2>/dev/null; then
+        echo "$https"
+    else
+        echo "$url"
+    fi
+}
+
 step_deps() {
     info "dependencies"
     local d="$REPO_DIR/dependencies"
     run mkdir -p "$d"
 
-    fetch() {  # fetch <url> <dest> [noproxy]
-        local url="$1" dest="$2" noproxy="${3:-}"
-        if [[ -s "$dest" ]]; then ok "have $(basename "$dest")"; return 0; fi
-        local args=(-fSL --connect-timeout 20 --max-time 900 -o "$dest")
-        [[ -n "$noproxy" ]] && args+=(--noproxy '*')
-        info "fetching $(basename "$dest")${noproxy:+ (proxy bypassed)}"
-        run curl "${args[@]}" "$url" \
-            || die "could not fetch $url — if a proxy is in the way, set WAR_NOPROXY=1 or point *_URL at a mirror"
+    [[ -f "$CHECKSUM_FILE" ]] \
+        || warn "no $(basename "$CHECKSUM_FILE") — downloads will not be verified; run '$0 checksums' on a host you trust to create it"
+
+    fetch() {  # fetch <url> <dest> [force_direct]
+        local url="$1" dest="$2" force_direct="${3:-}" name
+        name="$(basename "$dest")"
+
+        if [[ -s "$dest" ]]; then
+            ok "have $name"
+            [[ "$DRY_RUN" == true ]] || verify_file "$dest"
+            return 0
+        fi
+        if [[ "$DRY_RUN" == true ]]; then
+            echo "  would fetch $url -> $dest"
+            return 0
+        fi
+
+        url="$(prefer_https "$url")"
+        pick_route "$url" "$force_direct"
+        info "fetching $name via $ROUTE_NAME"
+
+        # --retry covers the transient proxy failures these hosts actually see.
+        curl -fSL --connect-timeout 20 --max-time 1800 \
+             --retry 3 --retry-delay 5 --retry-connrefused \
+             "${ROUTE_ARGS[@]}" -o "$dest" "$url" \
+            || { rm -f "$dest"; die "could not fetch $url"; }
+
+        verify_file "$dest"
     }
 
     fetch "$WAR_URL"          "$d/jabaws.war"          "${WAR_NOPROXY:-}"
@@ -176,6 +269,30 @@ step_deps() {
         run unzip -q "$d/jabaws.war" -d "$d/jabaws"
     fi
     ok "dependencies ready"
+}
+
+# Record checksums for whatever is currently in dependencies/. Trust-on-first-use:
+# run it only on a host whose downloads you are prepared to vouch for, then commit
+# the file so every later build on every host is checked against it.
+step_checksums() {
+    info "recording checksums"
+    local d="$REPO_DIR/dependencies" f
+    for f in jabaws.war Python-2.7.13.tgz config.guess config.sub; do
+        [[ -s "$d/$f" ]] || die "$d/$f is missing — run the deps step first"
+    done
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "  would write $CHECKSUM_FILE"
+        return 0
+    fi
+    {
+        echo "# sha256 checksums for build dependencies, recorded by podman-deploy.sh."
+        echo "# Verified on every fetch; a mismatch aborts the build."
+        for f in jabaws.war Python-2.7.13.tgz config.guess config.sub; do
+            echo "$(sha256_of "$d/$f")  $f"
+        done
+    } > "$CHECKSUM_FILE"
+    ok "wrote $CHECKSUM_FILE — commit it"
+    cat "$CHECKSUM_FILE"
 }
 
 ################################################################################

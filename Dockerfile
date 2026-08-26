@@ -25,6 +25,10 @@ FROM tomcat:9.0.107-jre8-temurin-jammy AS tomcat-base
 ############################
 FROM ubuntu:22.04 AS tool-builder
 
+# A flaky or restricted proxy is the normal case on a locked-down build host, and
+# a transient repository failure otherwise kills a 15-minute build at step two.
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries
+
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
         build-essential \
@@ -170,7 +174,8 @@ FROM tomcat-base AS runtime
 
 # ---- bring in the runtime libs the native tools need (and Python 2) ----
 # curl is used by the entrypoint to warm the service registry on boot.
-RUN apt-get update \
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
       libargtable2-0 \
       libgomp1 \

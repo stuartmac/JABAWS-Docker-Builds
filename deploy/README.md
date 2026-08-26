@@ -62,8 +62,17 @@ podman build --pull=never -t jabaws:latest .
 can't reach one. Two sources are worth knowing about: the JABAWS WAR is served
 from `www.compbio.dundee.ac.uk`, which some site proxies cannot route to, and
 Savannah's gitweb URLs for `config.guess` / `config.sub` are prone to 502s
-through a proxy, where the gcc mirror on GitHub serves the same files. Fetch by
-hand, bypassing the proxy only where needed:
+through a proxy, where the gcc mirror on GitHub serves the same files.
+
+The `deps` step doesn't make you work this out in advance. For each source it
+probes the proxy first, falls back to a direct connection, reports which one it
+used, and fails loudly if neither works. It also upgrades an `http://` source to
+`https://` when the host answers on TLS, and retries three times, since a
+transient proxy failure is the normal case on these hosts rather than the
+exception. `WAR_NOPROXY=1` remains as an override when you already know the
+proxy can't route to the WAR host and want to skip the probe.
+
+To fetch by hand instead, bypassing the proxy only where needed:
 
 ```bash
 mkdir -p dependencies
@@ -89,6 +98,25 @@ export NO_PROXY="localhost,127.0.0.1"   # plus any host reachable only directly
 
 `deploy.env` sets all of this per host — `HTTP_PROXY`, `NO_PROXY_EXTRA`,
 `WAR_NOPROXY`, and `*_URL` overrides for the mirrors.
+
+### Dependency integrity
+
+The upstream WAR is 122 MB fetched over plain HTTP, and on a proxied host it
+arrives through a middlebox you don't control. `deploy/dependencies.sha256` pins
+what each download should be; every fetch is checked against it, and a mismatch
+aborts before anything is built. Files already present in `dependencies/` are
+verified too, so a corrupted or substituted artefact can't survive into a later
+build.
+
+The pins are trust-on-first-use. Record them once, on a host whose downloads you
+are prepared to vouch for, and commit the result:
+
+```bash
+./deploy/podman-deploy.sh deps checksums
+```
+
+If the file is absent the step still runs, but warns on every download that it
+cannot verify what arrived.
 
 ### Long builds over SSH
 
