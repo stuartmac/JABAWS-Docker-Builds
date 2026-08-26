@@ -39,3 +39,14 @@ local-jobsout/
 # OS-specific files
 .DS_Store
 Thumbs.db
+
+# Site-specific infrastructure notes (hostnames, paths, internal network details)
+*.local.md
+
+# Per-host deployment config (proxies, ports, unit names)
+deploy/deploy.env
+deploy/*.env
+!deploy/deploy.env.example
+
+# Build logs from deploy/podman-deploy.sh
+build-logs/

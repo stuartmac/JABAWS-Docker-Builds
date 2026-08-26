@@ -14,6 +14,7 @@ This resource was developed by the [Dundee Resource for Sequence Analysis and St
 
 - [🚀 Quick Start](#-quick-start)
 - [Run a Persistent Instance](#run-a-persistent-instance)
+- [🦭 Running with Podman](#-running-with-podman)
 - [Access the Services](#access-the-services)
 - [Use with Jalview 2.11](#use-with-jalview-211)
 - [Services Provided](#services-provided)
@@ -73,6 +74,34 @@ docker start jabaws-server
 ```
 
 These methods are recommended for regular use or deployment on a server.
+
+### 🦭 Running with Podman
+
+Podman runs this image unchanged — substitute `podman` for `docker` above. Two
+differences matter on a server:
+
+**SELinux.** On a host with SELinux enforcing, bind mounts need a relabel flag or
+the container can't write to them; named volumes are relabelled automatically.
+
+```bash
+podman run -d --name jabaws-server -p 8080:8080 \
+  -v "$(pwd)/logs:/usr/local/tomcat/logs:Z" \
+  drsasp/jabaws:latest
+```
+
+`:Z` relabels the directory exclusively to that container, so don't use it on a
+directory shared with anything else.
+
+**Nothing restarts a bare `podman run -d`.** A rootless container is torn down
+when the user's last login session ends unless lingering is enabled
+(`loginctl enable-linger <user>`), and nothing starts it again after a reboot.
+`--restart=always` doesn't close the gap either: it needs `podman-restart.service`
+to survive a reboot, and deliberately won't restart a container after an explicit
+`podman stop`. On Podman 4.4+ hand the container to systemd with a Quadlet unit —
+[`deploy/`](deploy/README.md) has a template and a script that installs it.
+
+Rootless can't bind ports below 1024 without `net.ipv4.ip_unprivileged_port_start`;
+publish a high port and put a reverse proxy in front instead.
 
 ## Access the Services
 
@@ -419,6 +448,13 @@ so both pull at ~200 MB — and Tomcat then re-expands it into every container's
 writable layer at startup, measured at 271 MB per container. Unpacking at build
 time keeps that in a shared image layer, starts faster, and is what allows
 volumes to be mounted under `webapps/jabaws/`.
+
+Building on a host that has Podman rather than Docker works the same way, but
+don't use the build scripts there: `/usr/bin/docker` on RHEL-family hosts is
+usually the `podman-docker` shim, and the scripts check for a Docker daemon that
+doesn't exist and don't forward proxy settings. Call `podman build` directly, and
+see [deploy/README.md](deploy/README.md) for the host-build recipe — short-name
+resolution, proxies, and running the build detached.
 
 If you want a standalone WAR to deploy into an existing Tomcat, use
 `extract-patched-war.sh`, which builds the `war-patcher` stage and copies the
