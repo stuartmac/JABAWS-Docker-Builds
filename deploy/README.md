@@ -163,6 +163,67 @@ the localhost request out to the network. The registry warm-up runs in the
 background after start, so `ServiceStatus` may show services as untested for the
 first few minutes — see [Registry warm-up](../OVERVIEW.md#registry-warm-up).
 
+## Upgrading and rolling back
+
+Images are tagged immutably as `<date>-<git sha>` (with `-dirty` when the tree
+has uncommitted changes) and labelled with the revision and build time, so a
+deployment names one exact build. `:latest` is kept as a convenience alias for
+interactive use — nothing systemd reads it. The unit file is the record of
+what's deployed, which means `systemctl cat` answers "what is running here?" on
+a host with no checkout:
+
+```bash
+systemctl --user cat jabaws | grep ^Image=
+```
+
+To upgrade:
+
+```bash
+./deploy/podman-deploy.sh upgrade
+```
+
+That builds a new image, stops the unit, snapshots the statistics database into
+the backups volume as `preupgrade-<tag>` (keeping the last two), points the unit
+at the new image, starts it, and verifies. **If verification fails it puts the
+old image back and re-verifies**, exiting non-zero — a failed upgrade should
+leave a serving container, not a broken one. Old images beyond `KEEP_IMAGES`
+(default 3) are pruned afterwards, never the deployed or previous one.
+
+There is a short outage, by necessity: Derby holds an exclusive lock on the
+statistics volume, so the old and new containers cannot overlap. Expect a few
+seconds — Tomcat deploys the unpacked webapp in around four, and the registry
+warm-up runs in the background afterwards. If you ever need zero downtime, the
+honest route is a second container on another port with no statistics volume,
+flipped at the reverse proxy; two containers sharing one Derby database is not
+an option.
+
+To roll back — no rebuild, since the images are still there:
+
+```bash
+./deploy/podman-deploy.sh rollback                                   # previous
+ROLLBACK_TO=localhost/jabaws:20260826-7fc5260 ./deploy/podman-deploy.sh rollback
+```
+
+Deployment history is recorded in `${XDG_STATE_HOME:-~/.local/state}/jabaws-deploy/history`
+— state, deliberately not in `deploy.env`, which is configuration.
+
+### Health checks
+
+`Restart=always` only notices a process that has exited; a wedged Tomcat looks
+healthy to it. The unit therefore carries a Podman health check that asks
+whether JABAWS is actually answering:
+
+```ini
+HealthCmd=curl -fsS http://localhost:8080/jabaws/ServiceStatus || exit 1
+HealthInterval=60s
+HealthStartPeriod=120s
+HealthOnFailure=restart
+```
+
+The image already ships `curl` for the entrypoint's registry warm-up, so this
+needs nothing extra. Inspect the current state with
+`podman healthcheck run jabaws` or `podman inspect jabaws --format '{{.State.Health.Status}}'`.
+
 ## Does Quadlet clash with existing systemd-managed containers?
 
 No. Quadlet is a systemd *generator*: at each `daemon-reload` it reads

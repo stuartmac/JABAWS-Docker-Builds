@@ -20,6 +20,11 @@
 #
 #   checksums    record dependency checksums (not part of the default run)
 #
+# Lifecycle steps (not part of the default run):
+#   upgrade      build a new image, swap the unit onto it, verify, and roll
+#                back automatically if it does not come up
+#   rollback     put the previous image back (ROLLBACK_TO=<ref> to choose one)
+#
 # Options:
 #   -h, --help       show this help
 #   -f, --env FILE   env file to source (default: deploy/deploy.env)
@@ -46,7 +51,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)    sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -f|--env)     ENV_FILE="$2"; shift 2 ;;
         -n|--dry-run) DRY_RUN=true; shift ;;
-        preflight|deps|bases|build|unit|start|verify|checksums) STEPS+=("$1"); shift ;;
+        preflight|deps|bases|build|unit|start|verify|checksums|upgrade|rollback) STEPS+=("$1"); shift ;;
         *) die "unknown argument: $1 (try --help)" ;;
     esac
 done
@@ -60,7 +65,16 @@ else
     warn "no env file at $ENV_FILE — using defaults (see deploy.env.example)"
 fi
 
-IMAGE="${IMAGE:-localhost/jabaws:latest}"
+# Images are tagged immutably (<date>-<git sha>) so a deployment names an exact
+# build and rollback is a one-line change to the unit. IMAGE pins an explicit
+# reference and skips the derivation.
+IMAGE_REPO="${IMAGE_REPO:-localhost/jabaws}"
+IMAGE="${IMAGE:-}"
+KEEP_IMAGES="${KEEP_IMAGES:-3}"
+STATE_DIR="${STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/jabaws-deploy}"
+HISTORY_FILE="$STATE_DIR/history"
+BUILT_IMAGE=""
+VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-300}"   # seconds to wait for /jabaws/ to answer
 CONTAINER_NAME="${CONTAINER_NAME:-jabaws}"
 HOST_PORT="${HOST_PORT:-8080}"
 VOLUME_PREFIX="${VOLUME_PREFIX:-jabaws}"
@@ -90,6 +104,85 @@ esac
 
 run() {
     if [[ "$DRY_RUN" == true ]]; then echo "  would run: $*"; else "$@"; fi
+}
+
+################################################################################
+# Image identity and deployment state
+
+build_tag() {  # <date>-<git sha>, marked when the tree is dirty
+    local sha
+    sha="$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo nogit)"
+    [[ -n "$(git -C "$REPO_DIR" status --porcelain 2>/dev/null)" ]] && sha="${sha}-dirty"
+    echo "$(date -u +%Y%m%d)-${sha}"
+}
+
+unit_file() { echo "$QUADLET_DIR/${UNIT_NAME}.container"; }
+
+current_unit_image() {  # image reference the installed unit deploys, if any
+    local f; f="$(unit_file)"
+    [[ -f "$f" ]] || return 1
+    awk -F= '/^Image=/ { print $2; exit }' "$f"
+}
+
+set_unit_image() {  # set_unit_image <ref>
+    local f; f="$(unit_file)"
+    [[ -f "$f" ]] || die "no unit at $f — run the full deploy first"
+    sed -i.bak "s|^Image=.*|Image=$1|" "$f" && rm -f "$f.bak"
+}
+
+resolve_image() {  # what to deploy when no build ran in this invocation
+    if [[ -n "$IMAGE" ]]; then echo "$IMAGE"; return; fi
+    local from_unit; from_unit="$(current_unit_image 2>/dev/null || true)"
+    if [[ -n "$from_unit" ]]; then echo "$from_unit"; return; fi
+    # newest local build, so `unit` can follow a `build` from an earlier run
+    podman images --filter "reference=$IMAGE_REPO" --sort created \
+        --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -v ':latest$' | tail -1
+}
+
+record_deployment() {  # record_deployment <ref>
+    mkdir -p "$STATE_DIR"
+    printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "$HISTORY_FILE"
+}
+
+previous_deployment() {  # last recorded reference that isn't the current one
+    local current; current="$(current_unit_image 2>/dev/null || true)"
+    [[ -f "$HISTORY_FILE" ]] || return 1
+    awk -v cur="$current" '{ if ($2 != cur) prev = $2 } END { if (prev != "") print prev }' "$HISTORY_FILE"
+}
+
+# A Derby database can only be copied safely while nothing holds it open, which
+# is exactly the window an upgrade opens anyway. The nightly backup covers
+# routine loss; this covers "the upgrade itself was the problem".
+snapshot_stats() {  # snapshot_stats <label>
+    local label="$1"
+    podman volume exists "${VOLUME_PREFIX}-stats" 2>/dev/null || {
+        warn "no ${VOLUME_PREFIX}-stats volume — skipping pre-upgrade snapshot"
+        return 0
+    }
+    info "snapshotting statistics database (container is stopped)"
+    # The jabaws image itself, so nothing has to be pulled on a host with
+    # short-name resolution enforced.
+    podman run --rm \
+        -v "${VOLUME_PREFIX}-stats:/src:Z" \
+        -v "${VOLUME_PREFIX}-stats-backups:/dst:Z" \
+        --entrypoint /bin/sh "$(resolve_image)" -c \
+        "mkdir -p /dst/preupgrade-$label && cp -a /src/. /dst/preupgrade-$label/ &&
+         ls -1d /dst/preupgrade-* | sort | head -n -2 | xargs -r rm -rf" \
+        || warn "snapshot failed — continuing, last night's backup still applies"
+}
+
+prune_images() {  # keep the newest KEEP_IMAGES, never the deployed or previous one
+    local keep_current keep_prev
+    keep_current="$(current_unit_image 2>/dev/null || true)"
+    keep_prev="$(previous_deployment 2>/dev/null || true)"
+    local ref
+    while read -r ref; do
+        [[ -z "$ref" || "$ref" == *":latest" ]] && continue
+        [[ "$ref" == "$keep_current" || "$ref" == "$keep_prev" ]] && continue
+        info "removing old image $ref"
+        podman rmi "$ref" >/dev/null 2>&1 || warn "could not remove $ref (in use?)"
+    done < <(podman images --filter "reference=$IMAGE_REPO" --sort created \
+                --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | head -n "-$KEEP_IMAGES")
 }
 
 ################################################################################
@@ -322,24 +415,31 @@ step_bases() {
 ################################################################################
 step_build() {
     info "build"
+    BUILT_IMAGE="${IMAGE:-$IMAGE_REPO:$(build_tag)}"
     run mkdir -p "$BUILD_LOG_DIR"
     local log="$BUILD_LOG_DIR/build-$(date +%Y%m%d-%H%M%S).log"
     info "logging to $log (10-15 min on 4 cores)"
 
     if [[ "$DRY_RUN" == true ]]; then
-        echo "  would run: podman build --pull=never -t $IMAGE $REPO_DIR"
+        echo "  would run: podman build --pull=never -t $BUILT_IMAGE $REPO_DIR"
         return 0
     fi
 
     # setsid so a dropped SSH connection doesn't take the build with it.
-    setsid podman build --pull=never -t "$IMAGE" "$REPO_DIR" > "$log" 2>&1 &
+    # Labels record provenance, so an image can be identified without its tag.
+    setsid podman build --pull=never \
+        --label "org.opencontainers.image.revision=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)" \
+        --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --label "org.opencontainers.image.version=${BUILT_IMAGE##*:}" \
+        -t "$BUILT_IMAGE" "$REPO_DIR" > "$log" 2>&1 &
     local pid=$!
     info "build pid $pid — tailing; ^C detaches without stopping it"
     tail --pid="$pid" -f "$log" | grep -E '^(STEP|\[[0-9]+/[0-9]+\]|Compiling|Successfully|Error: )' || true
     wait "$pid" || die "build failed — see $log"
 
     # gfortran prints Error: lines while compiling Tisean without failing.
-    ok "built $IMAGE ($(podman image inspect "$IMAGE" --format '{{.Size}}' | numfmt --to=iec))"
+    podman tag "$BUILT_IMAGE" "$IMAGE_REPO:latest"
+    ok "built $BUILT_IMAGE ($(podman image inspect "$BUILT_IMAGE" --format '{{.Size}}' | numfmt --to=iec))"
 }
 
 ################################################################################
@@ -347,11 +447,14 @@ step_unit() {
     info "quadlet unit"
     run mkdir -p "$QUADLET_DIR"
     local dest="$QUADLET_DIR/${UNIT_NAME}.container"
+    local image_ref="${BUILT_IMAGE:-$(resolve_image)}"
+    [[ -n "$image_ref" ]] || die "no image to deploy — run the build step first"
+    info "deploying $image_ref"
 
     if [[ "$DRY_RUN" == true ]]; then
         echo "  would install $dest"
     else
-        sed -e "s|@IMAGE@|$IMAGE|g" \
+        sed -e "s|@IMAGE@|$image_ref|g" \
             -e "s|@CONTAINER_NAME@|$CONTAINER_NAME|g" \
             -e "s|@HOST_PORT@|$HOST_PORT|g" \
             -e "s|@VOLUME_PREFIX@|$VOLUME_PREFIX|g" \
@@ -359,6 +462,7 @@ step_unit() {
             -e "s|@WANTED_BY@|$WANTED_BY|g" \
             "$SCRIPT_DIR/jabaws.container.in" > "$dest"
         ok "installed $dest"
+        record_deployment "$image_ref"
     fi
 
     run "${SYSTEMCTL[@]}" daemon-reload
@@ -368,6 +472,84 @@ step_unit() {
             || die "systemd did not generate ${UNIT_NAME}.service — check with: /usr/libexec/podman/quadlet -dryrun$([[ $QUADLET_SCOPE == user ]] && echo ' -user')"
         ok "${UNIT_NAME}.service generated"
     fi
+}
+
+
+################################################################################
+step_upgrade() {
+    info "upgrade"
+    local prev
+    prev="$(current_unit_image)" || die "no unit installed — run the full deploy first"
+    [[ -n "$prev" ]] || die "the unit has no Image= line"
+    info "currently deployed: $prev"
+
+    step_deps
+    step_bases
+    step_build
+
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "  would swap $prev -> $BUILT_IMAGE and verify, rolling back on failure"
+        return 0
+    fi
+    if [[ "$BUILT_IMAGE" == "$prev" ]]; then
+        warn "$BUILT_IMAGE is already deployed — nothing to swap"
+        return 0
+    fi
+
+    # Derby holds an exclusive lock on the statistics volume, so the old and new
+    # containers cannot overlap. Stop, snapshot in the gap, then swap.
+    info "stopping ${UNIT_NAME}.service"
+    "${SYSTEMCTL[@]}" stop "${UNIT_NAME}.service" || warn "stop reported an error"
+    snapshot_stats "${BUILT_IMAGE##*:}"
+
+    set_unit_image "$BUILT_IMAGE"
+    "${SYSTEMCTL[@]}" daemon-reload
+    "${SYSTEMCTL[@]}" start "${UNIT_NAME}.service" || warn "start reported an error"
+
+    if verify_endpoints; then
+        record_deployment "$BUILT_IMAGE"
+        ok "upgraded $prev -> $BUILT_IMAGE"
+        prune_images
+        return 0
+    fi
+
+    warn "new image did not verify — rolling back to $prev"
+    "${SYSTEMCTL[@]}" stop "${UNIT_NAME}.service" || true
+    set_unit_image "$prev"
+    "${SYSTEMCTL[@]}" daemon-reload
+    "${SYSTEMCTL[@]}" start "${UNIT_NAME}.service" || true
+
+    if verify_endpoints; then
+        die "upgrade to $BUILT_IMAGE failed; rolled back to $prev, which is serving again"
+    fi
+    die "upgrade to $BUILT_IMAGE failed AND the rollback to $prev did not come up — ${SYSTEMCTL[*]} status ${UNIT_NAME}.service"
+}
+
+################################################################################
+step_rollback() {
+    info "rollback"
+    local current target
+    current="$(current_unit_image)" || die "no unit installed"
+    target="${ROLLBACK_TO:-$(previous_deployment || true)}"
+    [[ -n "$target" ]] || die "no earlier deployment in $HISTORY_FILE — set ROLLBACK_TO=<image reference>"
+    [[ "$target" != "$current" ]] || die "$target is already deployed"
+
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "  would roll back $current -> $target"
+        return 0
+    fi
+    podman image exists "$target" \
+        || die "$target is no longer present locally — pick another from: $(podman images --filter "reference=$IMAGE_REPO" --format '{{.Repository}}:{{.Tag}}' | tr '\n' ' ')"
+
+    info "rolling back $current -> $target"
+    "${SYSTEMCTL[@]}" stop "${UNIT_NAME}.service" || warn "stop reported an error"
+    set_unit_image "$target"
+    "${SYSTEMCTL[@]}" daemon-reload
+    "${SYSTEMCTL[@]}" start "${UNIT_NAME}.service" || warn "start reported an error"
+
+    verify_endpoints || die "rollback to $target did not come up — ${SYSTEMCTL[*]} status ${UNIT_NAME}.service"
+    record_deployment "$target"
+    ok "rolled back to $target"
 }
 
 ################################################################################
@@ -381,18 +563,18 @@ step_start() {
 }
 
 ################################################################################
-step_verify() {
-    info "verifying"
-    [[ "$DRY_RUN" == true ]] && { echo "  would curl http://localhost:$HOST_PORT/jabaws/"; return 0; }
-
-    local deadline=$((SECONDS + 300)) code=000
+verify_endpoints() {  # returns non-zero instead of dying, for the upgrade path
+    local deadline=$((SECONDS + VERIFY_TIMEOUT)) code=000
     while (( SECONDS < deadline )); do
         code="$(curl -sS --noproxy '*' -o /dev/null -w '%{http_code}' \
                 "http://localhost:$HOST_PORT/jabaws/" 2>/dev/null || echo 000)"
         [[ "$code" == "200" ]] && break
         sleep 5
     done
-    [[ "$code" == "200" ]] || die "GET /jabaws/ returned $code after 5 min — ${SYSTEMCTL[*]} status ${UNIT_NAME}.service"
+    if [[ "$code" != "200" ]]; then
+        warn "GET /jabaws/ returned $code after ${VERIFY_TIMEOUT}s"
+        return 1
+    fi
 
     local failed=0
     for p in "" "ClustalWS?wsdl" "MafftWS?wsdl" "ServiceStatus"; do
@@ -401,12 +583,18 @@ step_verify() {
         printf '  %-22s HTTP %s\n' "/$p" "$code"
         [[ "$code" == "200" ]] || failed=1
     done
-    (( failed == 0 )) || die "not all endpoints returned 200"
+    (( failed == 0 )) || { warn "not all endpoints returned 200"; return 1; }
 
     ok "JABAWS is serving on http://localhost:$HOST_PORT/jabaws/"
     info "the registry warm-up runs in the background; services may show as untested for a few minutes"
     info "logs:   podman logs -f $CONTAINER_NAME"
     info "manage: ${SYSTEMCTL[*]} {status,restart,stop} ${UNIT_NAME}.service"
+}
+
+step_verify() {
+    info "verifying"
+    [[ "$DRY_RUN" == true ]] && { echo "  would curl http://localhost:$HOST_PORT/jabaws/"; return 0; }
+    verify_endpoints || die "verification failed — ${SYSTEMCTL[*]} status ${UNIT_NAME}.service"
 }
 
 ################################################################################

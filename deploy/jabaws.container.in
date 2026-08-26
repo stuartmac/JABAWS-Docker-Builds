@@ -26,6 +26,13 @@ Volume=@VOLUME_PREFIX@-stats-backups:/usr/local/tomcat/stats-backups:Z
 # nothing until testAllServices is called by hand).
 Environment=JABAWS_WARMUP=1
 
+# systemd only knows whether the process is alive. This asks whether JABAWS is
+# actually answering, and restarts it if not.
+HealthCmd=curl -fsS http://localhost:8080/jabaws/ServiceStatus || exit 1
+HealthInterval=60s
+HealthStartPeriod=120s
+HealthOnFailure=restart
+
 [Service]
 Restart=always
 # The warm-up and Tomcat's first deploy can take a while on a slow host.
