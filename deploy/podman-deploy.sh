@@ -168,27 +168,65 @@ snapshot_stats() {  # snapshot_stats <label>
     info "snapshotting statistics database (container is stopped)"
     # The jabaws image itself, so nothing has to be pulled on a host with
     # short-name resolution enforced.
-    podman run --rm \
+    local size
+    size="$(podman run --rm \
         -v "$STATS_VOLUME:/src:Z" \
         -v "$STATS_BACKUPS_VOLUME:/dst:Z" \
         --entrypoint /bin/sh "$(resolve_image)" -c \
         "mkdir -p /dst/preupgrade-$label && cp -a /src/. /dst/preupgrade-$label/ &&
-         ls -1d /dst/preupgrade-* | sort | head -n -2 | xargs -r rm -rf" \
-        || warn "snapshot failed — continuing, last night's backup still applies"
+         ls -1d /dst/preupgrade-* | sort | head -n -2 | xargs -r rm -rf &&
+         du -sh /dst/preupgrade-$label | cut -f1" 2>/dev/null)" \
+        || { warn "snapshot failed — continuing, last night's backup still applies"; return 0; }
+    [[ -n "$size" ]] \
+        && ok "snapshot: preupgrade-$label ($size) in $STATS_BACKUPS_VOLUME" \
+        || warn "snapshot command succeeded but produced no directory — check $STATS_BACKUPS_VOLUME"
 }
 
-prune_images() {  # keep the newest KEEP_IMAGES, never the deployed or previous one
+prune_images() {  # keep the newest KEEP_IMAGES builds, plus deployed and previous
     local keep_current keep_prev
     keep_current="$(current_unit_image 2>/dev/null || true)"
     keep_prev="$(previous_deployment 2>/dev/null || true)"
-    local ref
-    while read -r ref; do
-        [[ -z "$ref" || "$ref" == *":latest" ]] && continue
-        [[ "$ref" == "$keep_current" || "$ref" == "$keep_prev" ]] && continue
+
+    # Sort by creation time here rather than trusting podman's --sort direction,
+    # and drop :latest first: it is an alias for a build already in the list, so
+    # letting it occupy a retained slot silently keeps one build too many.
+    local kept=0 ref created
+    while read -r created ref; do
+        [[ -z "$ref" ]] && continue
+        if [[ "$ref" == "$keep_current" || "$ref" == "$keep_prev" ]]; then
+            kept=$((kept + 1)); continue
+        fi
+        if (( kept < KEEP_IMAGES )); then
+            kept=$((kept + 1)); continue
+        fi
         info "removing old image $ref"
         podman rmi "$ref" >/dev/null 2>&1 || warn "could not remove $ref (in use?)"
-    done < <(podman images --filter "reference=$IMAGE_REPO" --sort created \
-                --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | head -n "-$KEEP_IMAGES")
+    done < <(
+        podman images --filter "reference=$IMAGE_REPO" \
+               --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
+        | grep -vE ':(latest|<none>)$' \
+        | while read -r ref; do
+              printf '%s %s\n' \
+                  "$(podman image inspect "$ref" --format '{{.Created}}' 2>/dev/null)" "$ref"
+          done | sort -r
+    )
+
+    # Multi-stage builds leave the intermediate stages untagged, and they are
+    # large: on a host that has built a few times these outweigh the images
+    # being retained. They are also the build cache, so removing them costs a
+    # full recompile next time — opt in rather than surprising anyone.
+    local dangling
+    dangling="$(podman images --filter dangling=true --quiet 2>/dev/null | wc -l)"
+    if (( dangling > 0 )); then
+        if [[ "${PRUNE_DANGLING:-0}" == 1 ]]; then
+            info "removing $dangling untagged image(s) — the next build will not reuse cached layers"
+            podman image prune -f >/dev/null 2>&1 || warn "prune reported an error"
+        else
+            warn "$dangling untagged image(s) from previous builds are using disk"
+            warn "  reclaim with: podman image prune -f   (costs layer cache, so the next build is slower)"
+            warn "  or set PRUNE_DANGLING=1 to do it automatically after each upgrade"
+        fi
+    fi
 }
 
 ################################################################################
