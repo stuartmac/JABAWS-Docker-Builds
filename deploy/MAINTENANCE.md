@@ -95,7 +95,7 @@ podman exec jabaws tail -50 /usr/local/tomcat/logs/JABAWSErrorFile.log
 
 | Symptom | Look here |
 |---|---|
-| A job fails or returns nothing | `engine.log` — the tool's own stderr is captured there |
+| A job fails or returns nothing | the job's own directory — see [Inspecting a job](#inspecting-a-job) |
 | Service missing from Jalview | registry warm-up; `podman logs jabaws \| grep jabaws-warmup` |
 | Container restarts in a loop | `systemctl --user status jabaws`, then `podman logs jabaws` |
 | Health check flapping | `podman healthcheck run jabaws` runs it once, in the foreground |
@@ -104,6 +104,75 @@ podman exec jabaws tail -50 /usr/local/tomcat/logs/JABAWSErrorFile.log
 Everything in the logs volume is capped and rotated in-process — see
 [Rotation and retention](../OVERVIEW.md#rotation-and-retention). No `logrotate`
 entry is needed and adding one risks a `copytruncate` conflict with log4j.
+
+## Inspecting a job
+
+Every request leaves a directory under the `jobsout` volume named
+`<Service>#<jobid>`, and it holds everything needed to reproduce the run. This
+is the first place to look when a job fails or returns something unexpected —
+before the logs, because it is per-job rather than per-server.
+
+```bash
+# most recent jobs
+podman exec jabaws sh -c 'ls -1t /usr/local/tomcat/webapps/jabaws/jobsout | head'
+
+# everything about one of them
+podman exec jabaws sh -c 'cd /usr/local/tomcat/webapps/jabaws/jobsout/ClustalO#67218589855079 && ls -la && echo --- && cat procInput.txt'
+```
+
+| File | Is |
+|---|---|
+| `procInput.txt` | **the exact command line that ran** — the most useful file here |
+| `input.txt` | the sequences submitted |
+| `RunnerConfig.xml` | the parameters the client asked for |
+| `STARTED`, `FINISHED` | epoch milliseconds; the difference is the runtime |
+| `COLLECTED` | empty marker: the client fetched the result |
+| `result.txt` | the output, for services that produce one |
+| `stat.txt`, `stat.log` | the tool's own timing and statistics |
+| `error.txt` *or* `procError.txt` | the tool's stderr — which name depends on the service |
+
+`procInput.txt` is what makes a failure reproducible: copy the command, run it
+inside the container against the same `input.txt`, and you are testing the tool
+rather than the web service.
+
+```bash
+podman exec -it jabaws bash
+cd /usr/local/tomcat/webapps/jabaws/jobsout/<Service>#<jobid>
+cat procInput.txt          # then run that command by hand
+```
+
+### Two things that look like failures and are not
+
+**A non-empty stderr file usually means nothing.** These tools narrate to stderr.
+Mafft writes `nthread = 0 / stacksize: 8192 kb / Gap Penalty = -1.53` into
+`error.txt` on a completely successful run. Of the jobs in a healthy sample here,
+24 of 60 had a non-empty stderr file and every one of them had produced correct
+output. Judge the result, not the noise.
+
+**A missing `result.txt` is not necessarily a failure either.** Output filenames
+are per-service: IUPred writes `out.short`, `out.long` and `out.glob` and no
+`result.txt` at all; RNAalifold adds `alirna.ps`; ClustalW writes `input.dnd`
+and `input.clustalw`. Check what that service is supposed to produce before
+concluding anything.
+
+Note also that stderr lands in `error.txt` for some services (Mafft, T-Coffee,
+Probcons, MSAprobs, GLprobs, RNAalifold, DisEMBL, GlobPlot) and `procError.txt`
+for others (Clustal W/O, MUSCLE, AACon, Jronn, IUPred). Look for both.
+
+### What a real failure looks like
+
+- **No `FINISHED`** — the process never completed. Compare `STARTED` against the
+  clock; a job still running is normal, a job from yesterday is not.
+- **`FINISHED` present, no output file, and a stderr file containing an actual
+  diagnostic** — a missing shared library, a permission error, or the tool
+  refusing its input.
+- **Job directory absent entirely** — job directories are pruned after 168 hours
+  (`local.jobdir.maxlifespan`), so anything older than a week is simply gone.
+  Nothing is wrong; there is just nothing left to inspect.
+
+For failures that never reached a tool at all — a rejected request, a service
+that would not start — the job directory will be missing or near-empty, and
+`engine.log` is the place to look instead.
 
 ## The statistics database
 
