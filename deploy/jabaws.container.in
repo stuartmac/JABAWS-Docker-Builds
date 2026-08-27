@@ -16,10 +16,10 @@ PublishPort=@HOST_PORT@:8080
 
 # Named volumes are seeded from the image on first use, which matters for the
 # statistics database — a bind mount would present Derby an empty directory.
-Volume=@VOLUME_PREFIX@-logs:/usr/local/tomcat/logs:Z
-Volume=@VOLUME_PREFIX@-jobsout:/usr/local/tomcat/webapps/jabaws/jobsout:Z
-Volume=@VOLUME_PREFIX@-stats:/usr/local/tomcat/webapps/jabaws/ExecutionStatistic:Z
-Volume=@VOLUME_PREFIX@-stats-backups:/usr/local/tomcat/stats-backups:Z
+Volume=@LOGS_VOLUME@:/usr/local/tomcat/logs:Z
+Volume=@JOBSOUT_VOLUME@:/usr/local/tomcat/webapps/jabaws/jobsout:Z
+Volume=@STATS_VOLUME@:/usr/local/tomcat/webapps/jabaws/ExecutionStatistic:Z
+Volume=@STATS_BACKUPS_VOLUME@:/usr/local/tomcat/stats-backups:Z
 
 # The registry warm-up runs every tool once after start; it is backgrounded, so
 # it does not delay readiness. Set to 0 to skip it (Jalview then discovers

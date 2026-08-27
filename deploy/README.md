@@ -163,6 +163,45 @@ the localhost request out to the network. The registry warm-up runs in the
 background after start, so `ServiceStatus` may show services as untested for the
 first few minutes — see [Registry warm-up](../OVERVIEW.md#registry-warm-up).
 
+## Adopting an existing `podman run` deployment
+
+A container started by hand holds the name, the port and the volumes the unit
+wants, so systemd cannot simply take over: the two would collide. `preflight`
+detects an unmanaged container of the same name and stops rather than fighting
+it.
+
+Adoption is a deliberate swap. Point the unit at the volumes that already exist
+— podman cannot rename a volume, so if yours were named by hand, set
+`LOGS_VOLUME`, `JOBSOUT_VOLUME`, `STATS_VOLUME` and `STATS_BACKUPS_VOLUME` in
+`deploy.env` rather than copying data between volumes.
+
+```bash
+# 1. What is actually mounted, so deploy.env can match it exactly
+podman inspect jabaws --format '{{range .Mounts}}{{.Name}} -> {{.Destination}}
+{{end}}'
+
+# 2. A cold copy of the statistics database, before anything is torn down
+podman stop jabaws
+podman run --rm -v jabaws-stats:/src:Z -v "$PWD:/out:Z" \
+  --entrypoint /bin/sh localhost/jabaws:latest \
+  -c 'tar czf /out/stats-preadoption.tgz -C /src .'
+
+# 3. Give the running image an immutable tag, so there is something to roll
+#    back to. :latest is mutable and will be overwritten by the next build.
+podman tag localhost/jabaws:latest localhost/jabaws:$(date -u +%Y%m%d)-adopted
+
+# 4. Release the name and port
+podman rm jabaws
+
+# 5. Hand it to systemd, deploying the tag from step 3
+IMAGE=localhost/jabaws:$(date -u +%Y%m%d)-adopted \
+  ./deploy/podman-deploy.sh preflight unit start verify
+```
+
+Nothing is rebuilt: the same image, the same volumes, now under a unit that
+survives a reboot and a logout. Once that is serving, `upgrade` builds a fresh
+image and swaps onto it with automatic rollback to the adopted tag.
+
 ## Upgrading and rolling back
 
 Images are tagged immutably as `<date>-<git sha>` (with `-dirty` when the tree

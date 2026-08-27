@@ -78,6 +78,12 @@ VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-300}"   # seconds to wait for /jabaws/ to answ
 CONTAINER_NAME="${CONTAINER_NAME:-jabaws}"
 HOST_PORT="${HOST_PORT:-8080}"
 VOLUME_PREFIX="${VOLUME_PREFIX:-jabaws}"
+# Individually overridable, so an existing deployment whose volumes were named
+# by hand can be adopted without copying data — podman has no volume rename.
+LOGS_VOLUME="${LOGS_VOLUME:-$VOLUME_PREFIX-logs}"
+JOBSOUT_VOLUME="${JOBSOUT_VOLUME:-$VOLUME_PREFIX-jobsout}"
+STATS_VOLUME="${STATS_VOLUME:-$VOLUME_PREFIX-stats}"
+STATS_BACKUPS_VOLUME="${STATS_BACKUPS_VOLUME:-$VOLUME_PREFIX-stats-backups}"
 QUADLET_SCOPE="${QUADLET_SCOPE:-user}"
 UNIT_NAME="${UNIT_NAME:-jabaws}"
 BUILD_LOG_DIR="${BUILD_LOG_DIR:-$REPO_DIR/build-logs}"
@@ -155,16 +161,16 @@ previous_deployment() {  # last recorded reference that isn't the current one
 # routine loss; this covers "the upgrade itself was the problem".
 snapshot_stats() {  # snapshot_stats <label>
     local label="$1"
-    podman volume exists "${VOLUME_PREFIX}-stats" 2>/dev/null || {
-        warn "no ${VOLUME_PREFIX}-stats volume — skipping pre-upgrade snapshot"
+    podman volume exists "$STATS_VOLUME" 2>/dev/null || {
+        warn "no $STATS_VOLUME volume — skipping pre-upgrade snapshot"
         return 0
     }
     info "snapshotting statistics database (container is stopped)"
     # The jabaws image itself, so nothing has to be pulled on a host with
     # short-name resolution enforced.
     podman run --rm \
-        -v "${VOLUME_PREFIX}-stats:/src:Z" \
-        -v "${VOLUME_PREFIX}-stats-backups:/dst:Z" \
+        -v "$STATS_VOLUME:/src:Z" \
+        -v "$STATS_BACKUPS_VOLUME:/dst:Z" \
         --entrypoint /bin/sh "$(resolve_image)" -c \
         "mkdir -p /dst/preupgrade-$label && cp -a /src/. /dst/preupgrade-$label/ &&
          ls -1d /dst/preupgrade-* | sort | head -n -2 | xargs -r rm -rf" \
@@ -209,6 +215,17 @@ step_preflight() {
         die "only ${free}G free on $REPO_DIR, need ${MIN_FREE_GB}G (base images + build stages are ~4G, image ~550M)"
     fi
     ok "${free}G free"
+
+    if podman container exists "$CONTAINER_NAME" 2>/dev/null; then
+        local owner
+        owner="$(podman inspect "$CONTAINER_NAME" --format '{{index .Config.Labels "PODMAN_SYSTEMD_UNIT"}}' 2>/dev/null || true)"
+        if [[ -z "$owner" || "$owner" == "<no value>" ]]; then
+            warn "a container named '$CONTAINER_NAME' exists and is not managed by systemd"
+            warn "  it holds the name and port this unit needs — see 'Adopting an existing"
+            warn "  podman run deployment' in deploy/README.md before continuing"
+            die "refusing to run alongside an unmanaged container of the same name"
+        fi
+    fi
 
     if ss -ltn 2>/dev/null | grep -qE "[:.]${HOST_PORT}\b"; then
         die "port $HOST_PORT is already in use"
@@ -457,7 +474,10 @@ step_unit() {
         sed -e "s|@IMAGE@|$image_ref|g" \
             -e "s|@CONTAINER_NAME@|$CONTAINER_NAME|g" \
             -e "s|@HOST_PORT@|$HOST_PORT|g" \
-            -e "s|@VOLUME_PREFIX@|$VOLUME_PREFIX|g" \
+            -e "s|@LOGS_VOLUME@|$LOGS_VOLUME|g" \
+            -e "s|@JOBSOUT_VOLUME@|$JOBSOUT_VOLUME|g" \
+            -e "s|@STATS_VOLUME@|$STATS_VOLUME|g" \
+            -e "s|@STATS_BACKUPS_VOLUME@|$STATS_BACKUPS_VOLUME|g" \
             -e "s|@UNIT_NAME@|$UNIT_NAME|g" \
             -e "s|@WANTED_BY@|$WANTED_BY|g" \
             "$SCRIPT_DIR/jabaws.container.in" > "$dest"
