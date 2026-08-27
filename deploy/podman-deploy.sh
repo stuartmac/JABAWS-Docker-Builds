@@ -442,16 +442,23 @@ step_build() {
         return 0
     fi
 
+    # Create the log before backgrounding, so the tail below cannot lose the
+    # race to the child's redirection.
+    : > "$log"
+
     # setsid so a dropped SSH connection doesn't take the build with it.
     # Labels record provenance, so an image can be identified without its tag.
     setsid podman build --pull=never \
         --label "org.opencontainers.image.revision=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo unknown)" \
         --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         --label "org.opencontainers.image.version=${BUILT_IMAGE##*:}" \
-        -t "$BUILT_IMAGE" "$REPO_DIR" > "$log" 2>&1 &
+        -t "$BUILT_IMAGE" "$REPO_DIR" >> "$log" 2>&1 &
     local pid=$!
     info "build pid $pid — tailing; ^C detaches without stopping it"
-    tail --pid="$pid" -f "$log" | grep -E '^(STEP|\[[0-9]+/[0-9]+\]|Compiling|Successfully|Error: )' || true
+    info "or follow it yourself: tail -f $log"
+    # -F, and the file pre-created above, because the child sets up its
+    # redirection after the fork: plain -f can reach the log first and give up.
+    tail --pid="$pid" -F "$log" 2>/dev/null | grep -E '^(STEP|\[[0-9]+/[0-9]+\]|Compiling|Successfully|Error: )' || true
     wait "$pid" || die "build failed — see $log"
 
     # gfortran prints Error: lines while compiling Tisean without failing.
