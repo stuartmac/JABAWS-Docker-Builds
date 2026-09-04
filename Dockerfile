@@ -183,6 +183,31 @@ RUN printf '%s  %s\n' \
  && grep -q 'bioinformatics/bty045' index.jsp \
  && grep -q '27 March 2018'         template_footer.jsp
 
+# 2d) Job-directory retention.
+#
+# local.jobdir.maxlifespan is the retention: DirCleaner deletes a job directory
+# once (now - jobdir.lastModified()) exceeds it. The separate
+# local.jobdir.cleaning.frequency only decides how often that check runs, so a
+# directory actually survives maxlifespan plus up to one sweep interval.
+#
+# Upstream ships 168 (one week), which is also what gjb-www-4 runs. 48 hours is
+# a deliberate choice for this deployment: long enough for users to collect
+# results, small enough to keep the jobsout volume manageable. Raise it here if
+# users start losing results they still wanted.
+#
+# cleaning.frequency drops from the upstream 1440 (daily) to 60, so the sweep
+# runs hourly and real lifetime is 48-49h rather than 48-72h. The cost is a
+# directory scan each hour, which is negligible against the job load.
+#
+# The regexes deliberately do not anchor at end-of-line: this file has CRLF
+# endings, so `168$` would never match and the trailing \r must survive the
+# substitution. The grep guards catch exactly that class of silent no-op.
+RUN sed -i -e 's/^local\.jobdir\.maxlifespan=168/local.jobdir.maxlifespan=48/' \
+           -e 's/^local\.jobdir\.cleaning\.frequency=1440/local.jobdir.cleaning.frequency=60/' \
+           conf/Engine.local.properties \
+ && grep -qE '^local\.jobdir\.maxlifespan=48[[:space:]]*$'        conf/Engine.local.properties \
+ && grep -qE '^local\.jobdir\.cleaning\.frequency=60[[:space:]]*$' conf/Engine.local.properties
+
 # 3) Inject freshly‑built binaries into the WAR root so they unpack to /binaries/*
 COPY --from=tool-builder /build ./binaries/src
 

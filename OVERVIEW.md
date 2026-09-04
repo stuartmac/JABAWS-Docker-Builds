@@ -231,6 +231,73 @@ docker cp jabaws-server:/usr/local/tomcat/webapps/jabaws/jobsout ./local-jobsout
 
 > Use these commands whether you launched JABAWS with *Docker-managed volumes* or *bind mounts*.
 
+### Job directory retention
+
+Two settings in
+`/usr/local/tomcat/webapps/jabaws/conf/Engine.local.properties` govern how long
+job output survives, and they do different jobs:
+
+| Setting | What it does | This image |
+|---|---|---|
+| `local.jobdir.maxlifespan` | **Retention.** A job directory is deleted once its age exceeds this, in hours. `-1` never deletes. | `48` |
+| `local.jobdir.cleaning.frequency` | **Sweep period only.** How often the check runs, in minutes. Never affects *what* is deleted. | `60` |
+
+Because the sweep is periodic, a directory actually survives `maxlifespan` plus
+up to one sweep interval — with these values, between 48 and 49 hours.
+
+Upstream ships `maxlifespan=168` (one week) and `cleaning.frequency=1440`
+(daily). This image lowers them to 48 hours and hourly: long enough for users to
+collect results, short enough to keep the `jobsout` volume manageable, and
+swept often enough that the expiry time is predictable rather than drifting up
+to a day. Results are unavailable once the directory goes, so raise
+`maxlifespan` if users report losing results they still wanted.
+
+To change it without rebuilding, mount your own file over it and restart — the
+value is read once, when the webapp starts:
+
+```bash
+docker run -d --name jabaws-server -p 8080:8080 \
+  -v "$(pwd)/Engine.local.properties":/usr/local/tomcat/webapps/jabaws/conf/Engine.local.properties:ro \
+  drsasp/jabaws:latest
+```
+
+> **The cleaner is gated on `local.stat.collector.enable`.**
+> Job-directory cleaning has no enable flag of its own. `MainManager` schedules
+> the cleaner only inside the branch guarded by `local.stat.collector.enable`,
+> so setting that to `false` to switch off statistics collection *also* stops
+> job directories ever being deleted — `jobsout` then grows without bound.
+
+To confirm what the cleaner actually did on startup, note that it announces
+itself at INFO on the `compbio` logger, which this image ships at `WARN` — so
+by default those lines are **not** in `engine.log`. Raise the level temporarily:
+
+```bash
+sed 's/^log4j\.logger\.compbio=WARN, B/log4j.logger.compbio=INFO, B/' \
+    log4j.properties > log4j-info.properties
+
+docker run -d --name jabaws-check -p 8080:8080 \
+  -v "$(pwd)/log4j-info.properties":/usr/local/tomcat/webapps/jabaws/WEB-INF/classes/log4j.properties:ro \
+  drsasp/jabaws:latest
+
+docker exec jabaws-check grep -iE 'cleaner|Cleaning|life span' /usr/local/tomcat/logs/engine.log
+```
+
+With this image's defaults that reports:
+
+```
+Initializing directory cleaners
+Cluster job directory cleaner is disabled.
+Maximum allowed directory life span (h): 48
+Cleaning local job directory every 60 minutes
+```
+
+The cluster line is expected — the image runs the local engine only. If you ever
+see `Local job directory cleaner is disabled.`, that is the
+`local.stat.collector.enable` trap above, and nothing is cleaning `jobsout`.
+
+The `cluster.jobdir.*` equivalents are left at their upstream values, since the
+image runs the local engine only (`engine.cluster.enable=false`).
+
 ---
 
 ## Volume Management
