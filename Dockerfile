@@ -152,6 +152,37 @@ RUN sed -i '/<!-- JABAWS listeners -->/r /tmp/stats-backup-listener.xml' WEB-INF
  && grep -q jabaws.docker.StatsBackup WEB-INF/web.xml \
  && rm /tmp/stats-backup-listener.xml /tmp/StatsBackup.java /tmp/servlet-api.jar
 
+# 2c) Restore the site content the public server actually serves.
+#
+# dependencies/jabaws.war is the August 2017 release, but www.compbio.dundee.ac.uk
+# had later edits applied on top that were never rolled back into a WAR. The
+# JABAWS 2.2 paper is cited here as "in preparation"; it was published in
+# Bioinformatics in 2018 (doi:10.1093/bioinformatics/bty045). Without this the
+# container front page advertises a citation that has been wrong for years.
+# The footer date lives in template_footer.jsp, which every page includes.
+#
+# site-content/ holds these two files copied verbatim from the live server
+# (gjb-www-4:.../tomcat-8.5.11_jaba-2.2prod/webapps/jabaws/, both dated
+# 27 March 2018), so this is the production content itself rather than a
+# reconstruction. A sweep of that webapp on 2026-09-03 confirmed these are the
+# only two content files that differ from the WAR - about.jsp, download.jsp,
+# getting_started.jsp, template_header.jsp and every docs/ page are identical.
+#
+# Whole-file forks rather than sed edits, because the change is structural: the
+# 2018 reference is prepended and the superseded one removed. The sha256 guards
+# are the point - if the WAR is ever bumped, the build fails here rather than
+# silently reverting whatever content the new release ships.
+COPY site-content/index.jsp           /tmp/site-index.jsp
+COPY site-content/template_footer.jsp /tmp/site-template_footer.jsp
+RUN printf '%s  %s\n' \
+      07bfee60eaa99bb82ae83c76427d2211e02c64b01d71dbd3d30543d393ac4544 index.jsp \
+      aad5ef12962c799550fe90a51c521d8fd542cd53886ba99f0a6113872e47b3ae template_footer.jsp \
+    | sha256sum -c - \
+ && mv /tmp/site-index.jsp           index.jsp \
+ && mv /tmp/site-template_footer.jsp template_footer.jsp \
+ && grep -q 'bioinformatics/bty045' index.jsp \
+ && grep -q '27 March 2018'         template_footer.jsp
+
 # 3) Inject freshly‑built binaries into the WAR root so they unpack to /binaries/*
 COPY --from=tool-builder /build ./binaries/src
 

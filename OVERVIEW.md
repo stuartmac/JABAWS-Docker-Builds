@@ -461,6 +461,23 @@ If you want a standalone WAR to deploy into an existing Tomcat, use
 `extract-patched-war.sh`, which builds the `war-patcher` stage and copies the
 patched WAR out.
 
+### Site content
+
+`dependencies/jabaws.war` is the August 2017 JABAWS 2.2 release, but the public
+server at www.compbio.dundee.ac.uk had two page edits applied on top in March 2018
+that were never rolled back into a WAR: `index.jsp` cites the JABAWS 2.2 paper as
+"Paper in preparation" when it was published in *Bioinformatics*
+([doi:10.1093/bioinformatics/bty045](https://doi.org/10.1093/bioinformatics/bty045)),
+and the footer date in `template_footer.jsp` (which every page includes) still
+reads August 2017.
+
+Both files are vendored in [`site-content/`](site-content/) and copied over the
+unpacked WAR by the `war-patcher` stage, so a built image serves the same pages
+as the public server. The step is guarded by the sha256 of each upstream file it
+replaces: if the WAR is ever updated, the build fails there rather than silently
+reverting newer content. Should that happen, re-check the two files against the
+new release and update the checksums in the `Dockerfile`.
+
 To get a shell with the tool sources *and* a full compiler toolchain — useful when
 experimenting with compilation flags — build the first stage on its own:
 
