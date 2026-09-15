@@ -320,11 +320,24 @@ input file and older than a grace period is deleted. A directory can only be
 missing its input file if the job was never actually registered, so this can
 never touch a job that is genuinely running, queued, or merely slow.
 
+The grace period stays short on purpose. `writeInput` writes an already
+fully-deserialized sequence list to disk in the same request that created the
+directory, so a real job is never without `input.txt` for more than a few
+seconds. Verified on the dev deployment 2026-09-15: a directory created via a
+deliberate `LimitExceededException` (2001 sequences against the default
+2000-sequence limit) sat there logging one `FileNotFoundException` a minute
+until removed on schedule, with three genuinely running/finished jobs in the
+same directory left untouched throughout.
+
 | Variable | Default | Effect |
 |---|---|---|
 | `JABAWS_PHANTOM_CLEANER` | `1` | `0` disables the schedule entirely |
-| `JABAWS_PHANTOM_CLEANER_GRACE_MINUTES` | `30` | how old a directory must be before it's considered abandoned |
-| `JABAWS_PHANTOM_CLEANER_INTERVAL_MINUTES` | `10` | how often the sweep runs |
+| `JABAWS_PHANTOM_CLEANER_GRACE_MINUTES` | `5` | how old a directory must be before it's considered abandoned |
+| `JABAWS_PHANTOM_CLEANER_INTERVAL_MINUTES` | `1` | how often the sweep runs |
+
+With these defaults a phantom directory logs at most a handful of
+`FileNotFoundException` warnings from the statistics sweep before it's
+removed, rather than accumulating one every minute indefinitely.
 
 Progress and removals go to `logs/localhost.<date>.log`, the same as the
 statistics backup:

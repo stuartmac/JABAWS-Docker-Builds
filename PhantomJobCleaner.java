@@ -45,9 +45,14 @@ import javax.servlet.ServletContextListener;
  *     entirely.
  * <li>{@code JABAWS_PHANTOM_CLEANER_GRACE_MINUTES} -- how old a directory
  *     must be before it is considered abandoned rather than mid-submission.
- *     Default {@code 30}.
+ *     Default {@code 5}. This can stay small: {@code writeInput} writes an
+ *     already fully-deserialized sequence list to disk in the same request
+ *     that created the directory, so a real job is never without input.txt
+ *     for more than a few seconds, let alone minutes.
  * <li>{@code JABAWS_PHANTOM_CLEANER_INTERVAL_MINUTES} -- how often the sweep
- *     runs. Default {@code 10}.
+ *     runs. Default {@code 1}, matching the per-minute statistics sweep this
+ *     listener exists to quiet down -- so a phantom directory gets at most
+ *     one more warning logged against it after its grace period expires.
  * </ul>
  *
  * <p>Progress and errors go to {@code ServletContext.log}, which Tomcat writes
@@ -57,8 +62,8 @@ import javax.servlet.ServletContextListener;
 public final class PhantomJobCleaner implements ServletContextListener {
 
 	private static final String INPUT_FILE = "input.txt";
-	private static final int DEFAULT_GRACE_MINUTES = 30;
-	private static final int DEFAULT_INTERVAL_MINUTES = 10;
+	private static final int DEFAULT_GRACE_MINUTES = 5;
+	private static final int DEFAULT_INTERVAL_MINUTES = 1;
 
 	private ServletContext context;
 	private Timer timer;
