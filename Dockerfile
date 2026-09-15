@@ -53,6 +53,14 @@ COPY tool-config/muscle-mk                     muscle/mk
 COPY tool-config/tcoffee-makefile              tcoffee/t_coffee_source/makefile
 COPY jabaws-config/t_coffee.sh                 tcoffee/t_coffee_source/
 
+# T-Coffee indexes a fixed table by PID and exits once a child's PID reaches
+# MAX_N_PID (260000). A long-running container passes that, after which every
+# job fails with "MAX_N_PID exceded" and hangs until killed. Size the table to
+# the kernel's largest pid_max (2^22). grep fails the build if the define moves.
+RUN sed -i 's/^#define MAX_N_PID[[:space:]]\+260000$/#define MAX_N_PID       4194304/' \
+        tcoffee/t_coffee_source/coffee_defines.h && \
+    grep -q '^#define MAX_N_PID[[:space:]]\+4194304$' tcoffee/t_coffee_source/coffee_defines.h
+
 # remove any object/lib files that shipped inside the WAR so every tool is rebuilt for the target architecture
 RUN find . -type f \( -name '*.o' -o -name '*.a' -o -name '*.so' -o -name '*.deps' \) -delete
 
