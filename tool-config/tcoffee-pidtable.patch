@@ -1,0 +1,78 @@
+--- a/tcoffee/t_coffee_source/util_lib/util.c
++++ b/tcoffee/t_coffee_source/util_lib/util.c
+@@ -4231,7 +4231,10 @@
+ 
+ 
+ 
+-static int **pidtable;
++/* pidtable[2*p]=owner, pidtable[2*p+1]=live. One plain calloc block rather
++   than MAX_N_PID vcalloc rows: untouched pages are never committed, so a
++   large MAX_N_PID costs address space, not resident memory. */
++static pid_t *pidtable;
+ int assert_pid (pid_t p)
+ {
+   if ( p>= MAX_N_PID || p<0)
+@@ -4240,15 +4243,10 @@
+     }
+   return 1;
+ }
+-pid_t **declare_pidtable ()
++pid_t *declare_pidtable ()
+ {
+-  int a;
+-
+-  pidtable=(int**)vcalloc (MAX_N_PID, sizeof (pid_t*));
+-  for (a=0; a<MAX_N_PID; a++)
+-    {
+-      pidtable[a]=(int*)vcalloc (2, sizeof (pid_t));
+-    }
++  pidtable=(pid_t*)calloc (2*(size_t)MAX_N_PID, sizeof (pid_t));
++  if (!pidtable)crash ("\nFAILED TO ALLOCATE REQUIRED MEMORY (declare_pidtable)\n");
+   return pidtable;
+ }
+ pid_t set_pid (pid_t p)
+@@ -4257,8 +4255,8 @@
+   assert_pid (p);
+   if (!pidtable)declare_pidtable();
+   if ( p<=0) return (pid_t)0;
+-  pidtable[(int)p][0]=getpid();
+-  pidtable[(int)p][1]=1;
++  pidtable[2*(int)p]=getpid();
++  pidtable[2*(int)p+1]=1;
+   return p;}
+ 
+ 
+@@ -4333,7 +4331,7 @@
+   if (pidtable)
+     {
+       assert_pid (p);
+-      pidtable[(int)p][0]=pidtable[(int)p][1]=0;
++      pidtable[2*(int)p]=pidtable[2*(int)p+1]=0;
+     }
+   return p;
+ }
+@@ -4457,11 +4455,11 @@
+       cpid=getpid();
+       for (a=0; a<MAX_N_PID; a++)
+ 	{
+-	  if (pidtable[a][1] && pidtable[a][0]==cpid )
++	  if (pidtable[2*a+1] && pidtable[2*a]==cpid )
+ 	    {
+ 	      if (debug_lock)fprintf ( stderr, "\n--- KILL %d from TC (%d)\n", a, getpid());
+ 
+-	      pidtable[a][1]=pidtable[a][0]=0;
++	      pidtable[2*a+1]=pidtable[2*a]=0;
+ 	      kill((pid_t)a, SIGTERM);
+ 	      //lock (a, LLOCK, LRELEASE, "");
+ 	      shift_lock(a,getpid(),LERROR,LERROR, LSET);
+--- a/tcoffee/t_coffee_source/util_lib/util.h
++++ b/tcoffee/t_coffee_source/util_lib/util.h
+@@ -514,7 +514,7 @@
+ char *lock (int pid, int type, int action, char *value, ...);
+ int check_process (const char *com,int pid,int r, int failure_handling);
+ int assert_pid (pid_t p);
+-pid_t **declare_pidtable ();
++pid_t *declare_pidtable ();
+ pid_t set_pid (pid_t p);
+ pid_t vvfork(char *mode);
+ pid_t vwait (pid_t *p);

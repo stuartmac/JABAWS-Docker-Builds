@@ -60,6 +60,11 @@ COPY jabaws-config/t_coffee.sh                 tcoffee/t_coffee_source/
 RUN sed -i 's/^#define MAX_N_PID[[:space:]]\+260000$/#define MAX_N_PID       4194304/' \
         tcoffee/t_coffee_source/coffee_defines.h && \
     grep -q '^#define MAX_N_PID[[:space:]]\+4194304$' tcoffee/t_coffee_source/coffee_defines.h
+# Stock T-Coffee builds that table from MAX_N_PID separate vcalloc rows, which at
+# 4194304 is ~375 MB resident per process. The patch makes it one calloc block
+# whose untouched pages are never committed.
+COPY tool-config/tcoffee-pidtable.patch        ./
+RUN patch -p1 < tcoffee-pidtable.patch && rm tcoffee-pidtable.patch
 
 # remove any object/lib files that shipped inside the WAR so every tool is rebuilt for the target architecture
 RUN find . -type f \( -name '*.o' -o -name '*.a' -o -name '*.so' -o -name '*.deps' \) -delete
