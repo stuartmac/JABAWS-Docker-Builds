@@ -1,0 +1,6 @@
+	<!-- Removes orphaned job directories that never received input.txt.
+	     Compiled into WEB-INF/classes by the war-patcher stage; the source and
+	     the reasoning live in PhantomJobCleaner.java at the repo root. -->
+	<listener>
+		<listener-class>jabaws.docker.PhantomJobCleaner</listener-class>
+	</listener>

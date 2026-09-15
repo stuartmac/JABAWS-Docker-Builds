@@ -298,6 +298,41 @@ see `Local job directory cleaner is disabled.`, that is the
 The `cluster.jobdir.*` equivalents are left at their upstream values, since the
 image runs the local engine only (`engine.cluster.enable=false`).
 
+### Orphaned job directories
+
+JABAWS creates a job's directory before it writes that job's input, and only
+registers the job with the engine after the input is written successfully. If
+anything goes wrong in between — a submission that exceeds a service's
+sequence limit, a write error, a client that disconnects mid-request — the
+directory is left behind, was never registered, and can never reach a
+finished/cancelled/failed status. Left alone, upstream's own per-minute
+statistics sweep (`local.stat.collector.update.frequency`, default `1`)
+re-checks every such directory on every run looking for its input file and
+logs a `FileNotFoundException` each time it isn't there — one warning per
+orphaned directory, every minute, until the directory eventually ages past
+`local.jobdir.maxlifespan` and the cleaner above removes it along with
+everything else.
+
+A listener compiled into the webapp
+([`PhantomJobCleaner.java`](PhantomJobCleaner.java)) removes these directories
+directly, well ahead of that: any `jobsout` directory that is both missing its
+input file and older than a grace period is deleted. A directory can only be
+missing its input file if the job was never actually registered, so this can
+never touch a job that is genuinely running, queued, or merely slow.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `JABAWS_PHANTOM_CLEANER` | `1` | `0` disables the schedule entirely |
+| `JABAWS_PHANTOM_CLEANER_GRACE_MINUTES` | `30` | how old a directory must be before it's considered abandoned |
+| `JABAWS_PHANTOM_CLEANER_INTERVAL_MINUTES` | `10` | how often the sweep runs |
+
+Progress and removals go to `logs/localhost.<date>.log`, the same as the
+statistics backup:
+
+```bash
+docker exec jabaws-server grep phantom-cleaner /usr/local/tomcat/logs/localhost.$(date +%Y-%m-%d).log
+```
+
 ---
 
 ## Volume Management

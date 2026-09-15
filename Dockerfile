@@ -128,7 +128,8 @@ COPY Executable.properties conf/Executable.properties
 # container cannot fill the logs volume. See log4j.properties for the details.
 COPY log4j.properties WEB-INF/classes/log4j.properties
 
-# 2a) Compile the nightly statistics-backup listener into the webapp
+# 2a) Compile the in-webapp listeners: the nightly statistics-backup and the
+# orphaned job-directory sweeper.
 #
 # The statistics database is embedded Derby, so the Tomcat JVM holds an
 # exclusive lock on it and no external process can dump it while the container
@@ -136,21 +137,31 @@ COPY log4j.properties WEB-INF/classes/log4j.properties
 # backup on a schedule; see its header comment for the full rationale, and
 # OVERVIEW.md for the environment variables that configure it.
 #
+# PhantomJobCleaner.java removes job directories that were created but never
+# received input.txt -- a JABAWS submission-path race that otherwise leaves
+# them logging a FileNotFoundException on every per-minute statistics sweep
+# until the normal (multi-day) retention sweep eventually catches them. See
+# its header comment for the full rationale.
+#
 # servlet-api.jar is compile-time only (Tomcat provides it at runtime), which is
 # why it is borrowed from tomcat-base rather than added to WEB-INF/lib.
 COPY --from=tomcat-base /usr/local/tomcat/lib/servlet-api.jar /tmp/servlet-api.jar
-COPY StatsBackup.java /tmp/StatsBackup.java
-RUN javac -cp /tmp/servlet-api.jar -d WEB-INF/classes /tmp/StatsBackup.java \
- && test -f WEB-INF/classes/jabaws/docker/StatsBackup.class
+COPY StatsBackup.java PhantomJobCleaner.java /tmp/
+RUN javac -cp /tmp/servlet-api.jar -d WEB-INF/classes /tmp/StatsBackup.java /tmp/PhantomJobCleaner.java \
+ && test -f WEB-INF/classes/jabaws/docker/StatsBackup.class \
+ && test -f WEB-INF/classes/jabaws/docker/PhantomJobCleaner.class
 
-# 2b) Register the listener. As with the server.xml edits in the runtime stage,
-# the grep guard is the point: if upstream ever renames that comment the sed
-# matches nothing, and a failed build beats an image whose backups silently
-# never run.
-COPY stats-backup-listener.xml /tmp/stats-backup-listener.xml
+# 2b) Register the listeners. As with the server.xml edits in the runtime
+# stage, the grep guards are the point: if upstream ever renames that comment
+# the sed matches nothing, and a failed build beats an image whose backups or
+# cleanup silently never run.
+COPY stats-backup-listener.xml phantom-cleaner-listener.xml /tmp/
 RUN sed -i '/<!-- JABAWS listeners -->/r /tmp/stats-backup-listener.xml' WEB-INF/web.xml \
+ && sed -i '/<!-- JABAWS listeners -->/r /tmp/phantom-cleaner-listener.xml' WEB-INF/web.xml \
  && grep -q jabaws.docker.StatsBackup WEB-INF/web.xml \
- && rm /tmp/stats-backup-listener.xml /tmp/StatsBackup.java /tmp/servlet-api.jar
+ && grep -q jabaws.docker.PhantomJobCleaner WEB-INF/web.xml \
+ && rm /tmp/stats-backup-listener.xml /tmp/phantom-cleaner-listener.xml \
+       /tmp/StatsBackup.java /tmp/PhantomJobCleaner.java /tmp/servlet-api.jar
 
 # 2c) Restore the site content the public server actually serves.
 #
